@@ -5,6 +5,12 @@ authors = ["Stefan Majewsky <majewsky@gmx.net>"]
 
 [dependencies]
 vt6 = { path = "../vt6.rs" }
+
+# event loop
 tokio = "^0.1"
 tokio-core = "^0.1"
 tokio-uds = "^0.1"
+
+# logging
+log = { version = "^0.4", features = [ "max_level_trace", "release_max_level_info" ] }
+simple_logger = "^0.5"

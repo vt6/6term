@@ -16,6 +16,9 @@
 *
 *******************************************************************************/
 
+#[macro_use]
+extern crate log;
+extern crate simple_logger;
 extern crate tokio;
 extern crate tokio_core;
 extern crate tokio_uds;
@@ -25,8 +28,10 @@ use tokio_core::reactor::Core;
 use tokio_uds::UnixListener;
 
 fn main() {
+    simple_logger::init().unwrap();
+
     if let Err(err) = run() {
-        println!("FATAL: {}", err);
+        error!("{}", err);
     }
 }
 
@@ -46,16 +51,17 @@ fn run() -> std::io::Result<()> {
     let socket_path = CleanupSocketOnExit(std::path::Path::new("./vt6term"));
     let listener = UnixListener::bind(socket_path.0, &handle)?;
 
-    let server = listener.incoming().for_each(|(stream, _addr)| {
+    let server = listener.incoming().for_each(|(stream, addr)| {
+        trace!("accepted client connection: {:?}", addr);
         let (reader, writer) = stream.split();
         tokio::spawn(
             tokio::io::copy(reader, writer)
                 .map(|_| ())
-                .map_err(|err| { println!("ERROR copy: {}", err); () })
+                .map_err(|err| { error!("stream copy: {}", err); () })
         );
         Ok(())
     }).map_err(|err| {
-        println!("ERROR listener.incoming.for_each: {}", err);
+        error!("listener.incoming.for_each: {}", err);
     });
 
     core.run(server).expect("Event loop failed");
