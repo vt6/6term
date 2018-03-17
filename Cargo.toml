@@ -6,3 +6,5 @@ authors = ["Stefan Majewsky <majewsky@gmx.net>"]
 [dependencies]
 vt6 = { path = "../vt6.rs" }
 tokio = "^0.1"
+tokio-core = "^0.1"
+tokio-uds = "^0.1"
