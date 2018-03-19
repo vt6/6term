@@ -16,6 +16,7 @@
 *
 *******************************************************************************/
 
+extern crate futures;
 #[macro_use]
 extern crate log;
 extern crate simple_logger;
@@ -24,8 +25,10 @@ extern crate tokio;
 extern crate tokio_core;
 extern crate tokio_uds;
 
-mod interrupt;
+use std::cell::RefCell;
 
+use futures::sync::oneshot;
+use simple_signal::Signal;
 use tokio::prelude::*;
 use tokio_core::reactor::Core;
 use tokio_uds::UnixListener;
@@ -38,21 +41,23 @@ fn main() {
     }
 }
 
-struct CleanupSocketOnExit<'a>(&'a std::path::Path);
-
-impl<'a> Drop for CleanupSocketOnExit<'a> {
-    fn drop(&mut self) {
-        std::fs::remove_file(self.0).expect("Socket cleanup failed");
-    }
-}
-
 fn run() -> std::io::Result<()> {
     let mut core = Core::new().expect("Core::new failed");
     let handle = core.handle();
 
-    //TODO: the Drop handler does not run when SIGINT/SIGTERM terminates the program
-    let socket_path = CleanupSocketOnExit(std::path::Path::new("./vt6term"));
-    let listener = UnixListener::bind(socket_path.0, &handle)?;
+    let socket_path = std::path::Path::new("./vt6term");
+    let listener = UnixListener::bind(socket_path, &handle)?;
+
+    let (interrupt_tx, interrupt_rx) = oneshot::channel();
+    let interrupt_tx: RefCell<Option<oneshot::Sender<()>>> = RefCell::new(Some(interrupt_tx));
+    simple_signal::set_handler(
+        &[Signal::Int, Signal::Term],
+        move |_| {
+            if let Some(tx) = interrupt_tx.replace(None) {
+                tx.send(()).expect("Interrupt report failed");
+            }
+        }
+    );
 
     let server = listener.incoming().for_each(|(stream, addr)| {
         trace!("accepted client connection: {:?}", addr);
@@ -69,9 +74,14 @@ fn run() -> std::io::Result<()> {
 
     //stop the eventloop either when the `server` future returns, or when an
     //interrupt is received
-    let interrupt_future = interrupt::Interrupt::new();
-    let server = interrupt_future.select(server).map_err(|_| ());
+    let interrupt_future = interrupt_rx
+        .map_err(|err| { error!("interrupt channel canceled: {}", err); });
+    let server = server.select(interrupt_future).map_err(|_| ());
 
     core.run(server).expect("Event loop failed");
+
+    //cleanup
+    std::fs::remove_file(socket_path).expect("Socket cleanup failed");
+
     Ok(())
 }
