@@ -19,9 +19,12 @@
 #[macro_use]
 extern crate log;
 extern crate simple_logger;
+extern crate simple_signal;
 extern crate tokio;
 extern crate tokio_core;
 extern crate tokio_uds;
+
+mod interrupt;
 
 use tokio::prelude::*;
 use tokio_core::reactor::Core;
@@ -63,6 +66,11 @@ fn run() -> std::io::Result<()> {
     }).map_err(|err| {
         error!("listener.incoming.for_each: {}", err);
     });
+
+    //stop the eventloop either when the `server` future returns, or when an
+    //interrupt is received
+    let interrupt_future = interrupt::Interrupt::new();
+    let server = interrupt_future.select(server).map_err(|_| ());
 
     core.run(server).expect("Event loop failed");
     Ok(())

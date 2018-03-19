@@ -7,6 +7,7 @@ authors = ["Stefan Majewsky <majewsky@gmx.net>"]
 vt6 = { path = "../vt6.rs" }
 
 # event loop
+simple-signal = "1.1.0"
 tokio = "^0.1"
 tokio-core = "^0.1"
 tokio-uds = "^0.1"
