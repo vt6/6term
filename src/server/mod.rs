@@ -16,13 +16,15 @@
 *
 *******************************************************************************/
 
+mod connection;
+
 use std;
 use std::cell::RefCell;
 use std::path::Path;
+use std::sync::Mutex;
 
 use futures::sync::oneshot;
 use simple_signal::{self, Signal};
-use tokio;
 use tokio::prelude::*;
 use tokio_core::reactor::Handle;
 use tokio_uds::UnixListener;
@@ -47,17 +49,16 @@ pub fn run<'a>(handle: &'a Handle, cfg: Config<'a>) -> std::io::Result<Box<Futur
         }
     );
 
+    let next_connection_id = Mutex::new(1);
+
     let server = listener.incoming()
         .map_err(|err| { error!("listener.incoming.for_each: {}", err); })
-        .for_each(|(stream, addr)| {
-            trace!("accepted client connection: {:?}", addr);
-            //TODO replace placeholder echo server by actual VT6 server behavior
-            let (reader, writer) = stream.split();
-            tokio::spawn(
-                tokio::io::copy(reader, writer)
-                    .map(|_| ())
-                    .map_err(|err| { error!("stream copy: {}", err); () })
-            );
+        .for_each(move |(stream, _addr)| {
+            let mut next_connection_id = next_connection_id.lock().unwrap();
+            let connection_id = *next_connection_id;
+            *next_connection_id += 1;
+
+            connection::Connection::new(connection_id, stream).exec();
             Ok(())
         });
 
