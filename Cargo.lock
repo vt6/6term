@@ -376,6 +376,7 @@ dependencies = [
  "simple_logger 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-core 0.1.15 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-io 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-uds 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "vt6 0.0.1",
 ]

@@ -25,6 +25,7 @@ use std::sync::Mutex;
 
 use futures::sync::oneshot;
 use simple_signal::{self, Signal};
+use tokio;
 use tokio::prelude::*;
 use tokio_core::reactor::Handle;
 use tokio_uds::UnixListener;
@@ -58,7 +59,9 @@ pub fn run<'a>(handle: &'a Handle, cfg: Config<'a>) -> std::io::Result<Box<Futur
             let connection_id = *next_connection_id;
             *next_connection_id += 1;
 
-            connection::Connection::new(connection_id, stream).exec();
+            tokio::spawn(connection::Connection::new(connection_id, stream)
+                .map_err(move |err| { error!("fatal error on connection {}: {}", connection_id, err); })
+            );
             Ok(())
         });
 
