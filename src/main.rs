@@ -24,7 +24,6 @@ extern crate simple_logger;
 extern crate simple_signal;
 extern crate tokio;
 extern crate tokio_core;
-#[macro_use]
 extern crate tokio_io;
 extern crate tokio_uds;
 extern crate vt6;
