@@ -20,7 +20,7 @@ use std;
 use std::vec::Vec;
 
 use tokio::prelude::*;
-use tokio_io::{io, AsyncRead};
+use tokio_io::AsyncRead;
 use tokio_uds::UnixStream;
 use vt6::core::msg;
 
@@ -41,6 +41,12 @@ impl Connection {
     }
 }
 
+impl Drop for Connection {
+    fn drop(&mut self) {
+        info!("connection {} terminated", self.id);
+    }
+}
+
 impl Future for Connection {
     type Item = ();
     type Error = std::io::Error;
@@ -55,6 +61,9 @@ impl Future for Connection {
                 error!("input discarded on connection {}: {:?}", self.id, text);
                 error!("-> reason: {}", err);
             },
+            RecvItem::EOF => {
+                return Ok(Async::Ready(()));
+            },
         }
 
         //attempt to read next message immediately
@@ -63,6 +72,7 @@ impl Future for Connection {
 }
 
 enum RecvItem {
+    EOF,
     SExpression(msg::SExpression),
     Discarded(String, msg::ParseError),
 }
@@ -92,9 +102,13 @@ impl RecvBuffer {
                 Ok(Async::Ready(RecvItem::SExpression(sexp)))
             },
             Err(ref e) if e.kind == msg::ParseErrorKind::UnexpectedEOF && self.fill < self.buf.len() => {
-                //we have not read the entire message yet
+                //we may have not read the entire message yet
                 if self.fill < self.buf.len() {
-                    self.fill += try_ready!(reader.poll_read(&mut self.buf[self.fill..]));;
+                    let bytes_read = try_ready!(reader.poll_read(&mut self.buf[self.fill..]));;
+                    self.fill += bytes_read;
+                    if bytes_read == 0 {
+                        return Ok(Async::Ready(RecvItem::EOF));
+                    }
                 }
                 self.poll_recv(reader)
             },
