@@ -35,6 +35,9 @@ pub struct Config<'a> {
 }
 
 pub fn run<'a>(handle: &'a Handle, cfg: Config<'a>) -> std::io::Result<Box<Future<Item=(), Error=()> + 'a>> {
+    //FIXME This opens the socket with SOCK_STREAM, but vt6/posix1 mandates SOCK_SEQPACKET.
+    //I'm doing the prototyping with this for now because neither mio-uds nor tokio-uds support
+    //SOCK_SEQPACKET.
     let listener = UnixListener::bind(cfg.socket_path, handle)?;
 
     //setup a signal handler to cleanly shutdown the server when SIGINT or
