@@ -23,6 +23,7 @@ use tokio::prelude::*;
 use tokio_io::AsyncRead;
 use tokio_uds::UnixStream;
 use vt6::core::msg;
+use vt6::core::msg::Parse;
 
 pub struct Connection {
     id: u32,
@@ -53,8 +54,8 @@ impl Future for Connection {
 
     fn poll(&mut self) -> Poll<(), std::io::Error> {
         match try_ready!(self.recv_buffer.poll_recv(&mut self.stream)) {
-            RecvItem::SExpression(sexp) => {
-                info!("s-expr received on connection {}: {}", self.id, sexp);
+            RecvItem::Message(sexp) => {
+                info!("message received on connection {}: {}", self.id, sexp);
                 //TODO: do something with it
             },
             RecvItem::Discarded(text, err) => {
@@ -73,7 +74,7 @@ impl Future for Connection {
 
 enum RecvItem {
     EOF,
-    SExpression(msg::SExpression),
+    Message(msg::Message),
     Discarded(String, msg::ParseError),
 }
 
@@ -92,14 +93,14 @@ impl RecvBuffer {
     {
         let (parse_result, bytes_consumed) = {
             let mut state = msg::ParserState::new(&self.buf[0..self.fill]);
-            let result = msg::SExpression::parse(&mut state);
+            let result = msg::Message::parse(&mut state);
             (result, state.cursor)
         };
 
         match parse_result {
             Ok(sexp) => {
                 self.discard(bytes_consumed);
-                Ok(Async::Ready(RecvItem::SExpression(sexp)))
+                Ok(Async::Ready(RecvItem::Message(sexp)))
             },
             Err(ref e) if e.kind == msg::ParseErrorKind::UnexpectedEOF && self.fill < self.buf.len() => {
                 //we may have not read the entire message yet
@@ -114,7 +115,11 @@ impl RecvBuffer {
             },
             Err(e) => {
                 //parser error -> reset the stream parser [vt6/core1.0; sect. 2.4]
-                let bytes_to_discard = self.buf.iter().position(|&c| c == b'(').unwrap_or(self.fill);
+                let bytes_to_discard = self.buf.iter().skip(1).position(|&c| c == b'(')
+                    .map(|x| x + 1).unwrap_or(self.fill);
+                //^ The .skip(1) is necessary to ensure that bytes_to_discard > 0. Otherwise an
+                //invalid message type may lead to an infinite loop, e.g. for self.buf == "(foo)".
+                //The .map() compensates the effect of .skip(1) on the index.
                 let discarded = String::from_utf8_lossy(&self.buf[0..bytes_to_discard]).into();
                 self.discard(bytes_to_discard);
                 Ok(Async::Ready(RecvItem::Discarded(discarded, e)))
