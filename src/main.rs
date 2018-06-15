@@ -18,8 +18,12 @@
 
 #[macro_use]
 extern crate futures;
+extern crate glib;
+extern crate gtk;
 #[macro_use]
 extern crate log;
+extern crate pango;
+extern crate pangocairo;
 extern crate simple_logger;
 extern crate simple_signal;
 extern crate tokio;
@@ -28,13 +32,19 @@ extern crate tokio_uds;
 extern crate vt6;
 
 mod server;
+mod window;
 
 fn main() {
     simple_logger::init().unwrap();
 
-    if let Err(err) = run() {
-        error!("{}", err);
-    }
+    //TODO: shutdown this thread when the GUI thread is done
+    std::thread::spawn(|| {
+        if let Err(err) = run() {
+            error!("{}", err);
+        }
+    });
+
+    window::main();
 }
 
 fn run() -> std::io::Result<()> {

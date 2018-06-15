@@ -2,7 +2,6 @@
 name = "vt6term"
 version = "0.1.0"
 authors = ["Stefan Majewsky <majewsky@gmx.net>"]
-
 [dependencies]
 vt6 = { path = "../vt6.rs" }
 
@@ -16,3 +15,9 @@ tokio-uds = "*"
 # logging
 log = { version = "^0.4", features = [ "max_level_trace", "release_max_level_info" ] }
 simple_logger = "^0.5"
+
+# GUI
+gtk = { version = "*", features = [ "v3_10" ] }
+glib = "*"
+pango = "*"
+pangocairo = "*"
