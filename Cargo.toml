@@ -10,9 +10,8 @@ vt6 = { path = "../vt6.rs" }
 simple-signal = "1.1.0"
 futures = "^0.1.18"
 tokio = "^0.1"
-tokio-core = "^0.1"
-tokio-io = "^0.1"
-tokio-uds = "^0.1"
+tokio-io = "*"
+tokio-uds = "*"
 
 # logging
 log = { version = "^0.4", features = [ "max_level_trace", "release_max_level_info" ] }

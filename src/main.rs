@@ -23,14 +23,11 @@ extern crate log;
 extern crate simple_logger;
 extern crate simple_signal;
 extern crate tokio;
-extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_uds;
 extern crate vt6;
 
 mod server;
-
-use tokio_core::reactor::Core;
 
 fn main() {
     simple_logger::init().unwrap();
@@ -41,14 +38,16 @@ fn main() {
 }
 
 fn run() -> std::io::Result<()> {
-    let mut core = Core::new().expect("Core::new failed");
-    let handle = core.handle();
-
     let socket_path = std::path::Path::new("./vt6term");
-    let server = server::run(&handle, server::Config {
+    let server = server::run(server::Config {
         socket_path: &socket_path,
     })?;
 
-    core.run(server).expect("Event loop failed");
+    use futures::Future;
+    use tokio::runtime::Runtime;
+
+    let mut rt = Runtime::new().unwrap();
+    rt.block_on(server).unwrap();
+    rt.shutdown_now().wait().unwrap();
     Ok(())
 }

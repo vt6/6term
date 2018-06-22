@@ -27,18 +27,17 @@ use futures::sync::oneshot;
 use simple_signal::{self, Signal};
 use tokio;
 use tokio::prelude::*;
-use tokio_core::reactor::Handle;
 use tokio_uds::UnixListener;
 
 pub struct Config<'a> {
     pub socket_path: &'a Path,
 }
 
-pub fn run<'a>(handle: &'a Handle, cfg: Config<'a>) -> std::io::Result<Box<Future<Item=(), Error=()> + 'a>> {
+pub fn run<'a>(cfg: Config<'a>) -> std::io::Result<Box<Future<Item=(), Error=()> + Send + 'a>> {
     //FIXME This opens the socket with SOCK_STREAM, but vt6/posix1 mandates SOCK_SEQPACKET.
     //I'm doing the prototyping with this for now because neither mio-uds nor tokio-uds support
     //SOCK_SEQPACKET.
-    let listener = UnixListener::bind(cfg.socket_path, handle)?;
+    let listener = UnixListener::bind(cfg.socket_path)?;
 
     //setup a signal handler to cleanly shutdown the server when SIGINT or
     //SIGTERM is received
@@ -57,7 +56,7 @@ pub fn run<'a>(handle: &'a Handle, cfg: Config<'a>) -> std::io::Result<Box<Futur
 
     let server = listener.incoming()
         .map_err(|err| { error!("listener.incoming.for_each: {}", err); })
-        .for_each(move |(stream, _addr)| {
+        .for_each(move |stream| {
             let mut next_connection_id = next_connection_id.lock().unwrap();
             let connection_id = *next_connection_id;
             *next_connection_id += 1;
