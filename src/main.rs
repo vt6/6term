@@ -16,6 +16,7 @@
 *
 *******************************************************************************/
 
+extern crate cairo;
 #[macro_use]
 extern crate futures;
 extern crate glib;
@@ -31,6 +32,7 @@ extern crate tokio_io;
 extern crate tokio_uds;
 extern crate vt6;
 
+mod document;
 mod server;
 mod window;
 

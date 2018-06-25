@@ -18,8 +18,11 @@
 
 use gtk::{self, DrawingArea, Window, WindowType};
 use gtk::prelude::*;
-use pango::{self, LayoutExt};
 use pangocairo;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use document::paragraph::Paragraph;
 
 pub fn main() {
     gtk::init().unwrap();
@@ -35,27 +38,38 @@ pub fn main() {
         Inhibit(false)
     });
 
-    area.connect_draw(|_widget, cairo_ctx| {
+    let paragraphs = Rc::new(RefCell::new(vec![
+        Paragraph::new("Lorem ipsum dolor sit amet,".into()),
+        Paragraph::new("consectetuer adipiscing elit.".into()),
+        Paragraph::new("Lorem ipsum dolor sit amet, consectetuer adipiscing elit.".into()),
+    ]));
+
+    area.connect_draw(move |widget, cairo_ctx| {
+        let pixel_width = widget.get_allocated_width();
+
         //draw background
         cairo_ctx.set_source_rgb(0., 0., 0.);
         cairo_ctx.paint();
 
-        //draw foreground
+        //draw paragraphs
         cairo_ctx.set_source_rgb(1., 1., 1.);
-        cairo_ctx.move_to(100., 100.);
+        cairo_ctx.move_to(0., 0.);
 
         let pango_ctx = pangocairo::functions::create_context(cairo_ctx).unwrap();
-        let layout = pango::Layout::new(&pango_ctx);
-        layout.set_text("Hello cruel world");
+        for paragraph in paragraphs.borrow_mut().iter_mut() {
+            let height = paragraph.prepare_rendering(pixel_width, &pango_ctx);
+            paragraph.render(cairo_ctx);
+            cairo_ctx.rel_move_to(0., height as f64);
+        }
 
+        /* TODO kept for later reference
         let attr_list = pango::AttrList::new();
         let mut attr = pango::Attribute::new_strikethrough(true).unwrap();
         attr.set_start_index(6);
         attr.set_end_index(10);
         attr_list.insert(attr);
         layout.set_attributes(&attr_list);
-
-        pangocairo::functions::show_layout(cairo_ctx, &layout);
+        */
 
         Inhibit(false)
     });

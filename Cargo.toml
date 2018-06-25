@@ -18,6 +18,7 @@ simple_logger = "^0.5"
 
 # GUI
 gtk = { version = "*", features = [ "v3_10" ] }
+cairo-rs = "*"
 glib = "*"
 pango = "*"
 pangocairo = "*"
