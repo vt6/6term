@@ -24,7 +24,7 @@ use pangocairo;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use document::paragraph::Paragraph;
+use document::section::{CursorAction, Section};
 use server;
 
 ///Returns when the GUI thread is done, meaning that all other threads shall be shut down.
@@ -42,13 +42,13 @@ pub fn main(_tx: &mut mpsc::Sender<server::Event>) {
         Inhibit(false)
     });
 
-    let paragraphs = Rc::new(RefCell::new(vec![
-        Paragraph::new("Lorem ipsum dolor sit amet,".into()),
-        Paragraph::new("consectetuer adipiscing elit.".into()),
-        Paragraph::new("Lorem ipsum dolor sit amet, consectetuer adipiscing elit.".into()),
+    let sections = Rc::new(RefCell::new(vec![
+        Section::new("Lorem ipsum dolor sit amet,".into()),
+        Section::new("consectetuer adipiscing elit.".into()),
+        Section::new("Lorem ipsum dolor sit amet, consectetuer adipiscing elit.".into()),
     ]));
 
-    let paragraphs1 = paragraphs.clone();
+    let sections1 = sections.clone();
     area.connect_draw(move |widget, cairo_ctx| {
         let pixel_width = widget.get_allocated_width();
 
@@ -56,14 +56,14 @@ pub fn main(_tx: &mut mpsc::Sender<server::Event>) {
         cairo_ctx.set_source_rgb(0., 0., 0.);
         cairo_ctx.paint();
 
-        //draw paragraphs
+        //draw sections
         cairo_ctx.set_source_rgb(1., 1., 1.);
         cairo_ctx.move_to(0., 0.);
 
         let pango_ctx = pangocairo::functions::create_context(cairo_ctx).unwrap();
-        for paragraph in paragraphs1.borrow_mut().iter_mut() {
-            let height = paragraph.prepare_rendering(pixel_width, &pango_ctx);
-            paragraph.render(cairo_ctx);
+        for section in sections1.borrow_mut().iter_mut() {
+            let height = section.prepare_rendering(pixel_width, &pango_ctx);
+            section.render(cairo_ctx);
             cairo_ctx.rel_move_to(0., height as f64);
         }
 
@@ -80,33 +80,38 @@ pub fn main(_tx: &mut mpsc::Sender<server::Event>) {
     });
 
     area.add_events(gdk::EventMask::KEY_PRESS_MASK.bits() as i32);
-    let paragraphs2 = paragraphs.clone();
+    let sections2 = sections.clone();
     area.connect_key_press_event(move |widget, event| {
-        let need_redraw = match gdk::keyval_to_unicode(event.get_keyval()) {
-            Some('\n') | Some('\r') => { // Enter/Return
-                if let Some(ref mut p) = paragraphs2.borrow_mut().last_mut() {
-                    p.text_mut().push('\n');
+        let keyval = event.get_keyval();
+        let action = match gdk::keyval_to_unicode(keyval) {
+            //Enter or Return
+            Some('\n') | Some('\r') => CursorAction::Insert("\n".into()),
+            //Backspace
+            Some('\u{8}') => CursorAction::DeletePreviousChar,
+            //Delete
+            Some('\u{7F}') => CursorAction::DeleteNextChar,
+            //printable character
+            Some(ch) if ch as u32 >= 32 => CursorAction::Insert(ch.to_string()),
+            //ignore other control characters
+            Some(_) => return Inhibit(false),
+            //other keys
+            None => {
+                use gdk::enums::key;
+                match keyval as key::Key {
+                    key::Left  | key::KP_Left  => CursorAction::GotoPreviousChar,
+                    key::Right | key::KP_Right => CursorAction::GotoNextChar,
+                    _ => {
+                        info!("unhandled keyval: {}", keyval);
+                        return Inhibit(false);
+                    },
                 }
-                true
             },
-            Some('\u{8}') => { // backspace
-                //TODO this is probably wrong for grapheme clusters
-                if let Some(ref mut p) = paragraphs2.borrow_mut().last_mut() {
-                    p.text_mut().pop().is_some()
-                } else {
-                    false
-                }
-            },
-            Some(ch) if ch as u32 >= 32 => { // printable character
-                if let Some(ref mut p) = paragraphs2.borrow_mut().last_mut() {
-                    p.text_mut().push(ch);
-                }
-                true
-            },
-            _ => false,
         };
-        if need_redraw {
-            widget.queue_draw();
+        if let Some(ref mut p) = sections2.borrow_mut().last_mut() {
+            let need_redraw = p.execute_cursor_action(action);
+            if need_redraw {
+                widget.queue_draw();
+            }
         }
         Inhibit(true)
     });
