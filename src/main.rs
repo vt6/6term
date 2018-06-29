@@ -19,6 +19,7 @@
 extern crate cairo;
 #[macro_use]
 extern crate futures;
+extern crate gdk;
 extern crate glib;
 extern crate gtk;
 #[macro_use]

@@ -17,6 +17,7 @@ log = { version = "^0.4", features = [ "max_level_trace", "release_max_level_inf
 simple_logger = "^0.5"
 
 # GUI
+gdk = "*"
 gtk = { version = "*", features = [ "v3_10" ] }
 cairo-rs = "*"
 glib = "*"

@@ -16,6 +16,7 @@
 *
 *******************************************************************************/
 
+use gdk;
 use gtk::{self, DrawingArea, Window, WindowType};
 use gtk::prelude::*;
 use pangocairo;
@@ -44,6 +45,7 @@ pub fn main() {
         Paragraph::new("Lorem ipsum dolor sit amet, consectetuer adipiscing elit.".into()),
     ]));
 
+    let paragraphs1 = paragraphs.clone();
     area.connect_draw(move |widget, cairo_ctx| {
         let pixel_width = widget.get_allocated_width();
 
@@ -56,7 +58,7 @@ pub fn main() {
         cairo_ctx.move_to(0., 0.);
 
         let pango_ctx = pangocairo::functions::create_context(cairo_ctx).unwrap();
-        for paragraph in paragraphs.borrow_mut().iter_mut() {
+        for paragraph in paragraphs1.borrow_mut().iter_mut() {
             let height = paragraph.prepare_rendering(pixel_width, &pango_ctx);
             paragraph.render(cairo_ctx);
             cairo_ctx.rel_move_to(0., height as f64);
@@ -73,6 +75,41 @@ pub fn main() {
 
         Inhibit(false)
     });
+
+    area.add_events(gdk::EventMask::KEY_PRESS_MASK.bits() as i32);
+    let paragraphs2 = paragraphs.clone();
+    area.connect_key_press_event(move |widget, event| {
+        let need_redraw = match gdk::keyval_to_unicode(event.get_keyval()) {
+            Some('\n') | Some('\r') => { // Enter/Return
+                if let Some(ref mut p) = paragraphs2.borrow_mut().last_mut() {
+                    p.text_mut().push('\n');
+                }
+                true
+            },
+            Some('\u{8}') => { // backspace
+                //TODO this is probably wrong for grapheme clusters
+                if let Some(ref mut p) = paragraphs2.borrow_mut().last_mut() {
+                    p.text_mut().pop().is_some()
+                } else {
+                    false
+                }
+            },
+            Some(ch) if ch as u32 >= 32 => { // printable character
+                if let Some(ref mut p) = paragraphs2.borrow_mut().last_mut() {
+                    p.text_mut().push(ch);
+                }
+                true
+            },
+            _ => false,
+        };
+        if need_redraw {
+            widget.queue_draw();
+        }
+        Inhibit(true)
+    });
+
+    area.set_can_focus(true);
+    area.grab_focus();
 
     gtk::main();
 }
