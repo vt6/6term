@@ -51,10 +51,8 @@ fn main() {
 }
 
 fn run() -> std::io::Result<()> {
-    let socket_path = std::path::Path::new("./vt6term");
-    let server = server::run(server::Config {
-        socket_path: &socket_path,
-    })?;
+    let socket_path = std::path::PathBuf::from("./vt6term");
+    let server = server::run(socket_path)?;
 
     use futures::Future;
     use tokio::runtime::Runtime;

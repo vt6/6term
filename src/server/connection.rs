@@ -40,6 +40,10 @@ impl Connection {
             recv_buffer: RecvBuffer::new(),
         }
     }
+
+    pub fn id(&self) -> u32 {
+        self.id
+    }
 }
 
 impl Drop for Connection {
