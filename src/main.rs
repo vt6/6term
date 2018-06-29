@@ -27,7 +27,6 @@ extern crate log;
 extern crate pango;
 extern crate pangocairo;
 extern crate simple_logger;
-extern crate simple_signal;
 extern crate tokio;
 extern crate tokio_io;
 extern crate tokio_uds;
@@ -37,28 +36,33 @@ mod document;
 mod server;
 mod window;
 
+use futures::sync::mpsc;
+
 fn main() {
     simple_logger::init().unwrap();
+    //setup channel for communication from GUI thread to Tokio eventloop
+    let (mut event_tx, event_rx) = mpsc::channel(10);
+
+    let socket_path = std::path::PathBuf::from("./vt6term");
+    let server = match server::Server::new(socket_path, event_rx) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("failed to initialize VT6 server socket: {}", e);
+            std::process::exit(1);
+        },
+    };
 
     //TODO: shutdown this thread when the GUI thread is done
-    std::thread::spawn(|| {
-        if let Err(err) = run() {
-            error!("{}", err);
-        }
+    let join_handle = std::thread::spawn(move || {
+        use futures::Future;
+        use tokio::runtime::Runtime;
+
+        let mut rt = Runtime::new().unwrap();
+        rt.block_on(server).unwrap();
+        rt.shutdown_now().wait().unwrap();
     });
 
-    window::main();
-}
-
-fn run() -> std::io::Result<()> {
-    let socket_path = std::path::PathBuf::from("./vt6term");
-    let server = server::run(socket_path)?;
-
-    use futures::Future;
-    use tokio::runtime::Runtime;
-
-    let mut rt = Runtime::new().unwrap();
-    rt.block_on(server).unwrap();
-    rt.shutdown_now().wait().unwrap();
-    Ok(())
+    window::main(&mut event_tx);
+    std::mem::drop(event_tx); //signal to server future to shutdown
+    join_handle.join().unwrap();
 }

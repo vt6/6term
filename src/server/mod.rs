@@ -19,11 +19,9 @@
 mod connection;
 
 use std;
-use std::cell::RefCell;
 use std::path::PathBuf;
 
 use futures::sync::mpsc;
-use simple_signal::{self, Signal};
 use tokio::prelude::*;
 use tokio_uds::UnixListener;
 
@@ -112,22 +110,4 @@ impl Future for Server {
             Ok(Async::Ready(Some(_))) => Ok(Async::NotReady), //TODO placeholder
         }
     }
-}
-
-pub fn run<'a>(socket_path: PathBuf) -> std::io::Result<Box<Future<Item=(), Error=()> + Send + 'a>> {
-    //setup a signal handler to cleanly shutdown the server when SIGINT or
-    //SIGTERM is received
-    let (event_tx, event_rx) = mpsc::channel(10);
-    let event_tx = RefCell::new(Some(event_tx));
-    simple_signal::set_handler(
-        &[Signal::Int, Signal::Term],
-        move |_| {
-            if let Some(tx) = event_tx.replace(None) {
-                std::mem::drop(tx);
-            }
-        }
-    );
-
-    let server = Server::new(socket_path, event_rx)?;
-    Ok(Box::new(server))
 }

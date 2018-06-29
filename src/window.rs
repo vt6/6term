@@ -16,6 +16,7 @@
 *
 *******************************************************************************/
 
+use futures::sync::mpsc;
 use gdk;
 use gtk::{self, DrawingArea, Window, WindowType};
 use gtk::prelude::*;
@@ -24,8 +25,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use document::paragraph::Paragraph;
+use server;
 
-pub fn main() {
+///Returns when the GUI thread is done, meaning that all other threads shall be shut down.
+pub fn main(_tx: &mut mpsc::Sender<server::Event>) {
     gtk::init().unwrap();
 
     let window = Window::new(WindowType::Toplevel);
