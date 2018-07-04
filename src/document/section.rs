@@ -17,8 +17,11 @@
 *******************************************************************************/
 
 use cairo;
+use gtk;
 use pango::{self, LayoutExt};
 use pangocairo;
+
+use std::cmp::max;
 
 pub enum CursorAction {
     Insert(String),
@@ -33,16 +36,21 @@ pub enum CursorAction {
 ///beginning of a line and ending at the end of a line.
 pub struct Section {
     text: String, //This is private to ensure that we notice all write access.
-    layout: Option<SectionLayout>,
+    text_changed: bool,
+    layout: pango::Layout,
     cursor: usize,
 }
 
 impl Section {
-    pub fn new(text: String) -> Section {
+    pub fn new<W: gtk::WidgetExt>(widget: &W, text: String) -> Section {
+        let layout = widget.create_pango_layout(Some(text.as_str())).unwrap();
+        layout.set_wrap(pango::WrapMode::WordChar);
+
         let len = text.len();
         Section {
             text: text,
-            layout: None,
+            text_changed: false,
+            layout: layout,
             cursor: len,
         }
     }
@@ -80,63 +88,56 @@ impl Section {
         }
 
         //text was changed
-        self.layout = None;
+        self.text_changed = true;
         true
     }
 
     ///Returns the local height that the section occupies on screen.
     ///FIXME Docs are unclear about whether this is in pixels or something
     ///else, so HiDPI rendering might be broken.
-    pub fn prepare_rendering(&mut self, pixel_width: i32, ctx: &pango::Context) -> i32 {
-        match self.layout {
-            None => {
-                let mut layout = SectionLayout::new(&self.text, pixel_width, ctx);
-                let height = layout.get_logical_extents().height;
-                self.layout = Some(layout);
-                height
-            },
-            Some(ref mut layout) => {
-                layout.update(pixel_width);
-                layout.get_logical_extents().height
-            }
+    pub fn prepare_rendering(&mut self, pixel_width: i32) -> i32 {
+        self.layout.set_width(pixel_width * pango::SCALE);
+        if self.text_changed {
+            self.layout.set_text(&self.text);
+            self.text_changed = false;
         }
+
+        //Pango context may have been attached to a new Cairo context
+        self.layout.context_changed();
+        //return logical height
+        self.get_logical_extents().height
     }
 
     ///The current coordinates of the cairo::Context must be at the
     ///upper left corner of the section.
     ///FIXME check with RTL text and RTL locale
-    pub fn render(&self, ctx: &cairo::Context) {
-        self.layout.as_ref().unwrap().render(ctx);
-    }
-}
+    pub fn render(&self, ctx: &cairo::Context, show_cursor: bool) {
+        ctx.save();
 
-struct SectionLayout {
-    layout: pango::Layout,
-}
+        //show_layout requires the cursor to point to the start of the baseline
+        let extents = self.get_logical_extents();
+        ctx.move_to(-extents.x as f64, -extents.y as f64);
+        pangocairo::functions::show_layout(ctx, &self.layout);
 
-impl SectionLayout {
-    fn new(text: &str, pixel_width: i32, ctx: &pango::Context) -> SectionLayout {
-        let layout = pango::Layout::new(ctx);
-        layout.set_wrap(pango::WrapMode::WordChar);
-        layout.set_width(pixel_width * pango::SCALE);
-        layout.set_text(&text);
-        SectionLayout { layout: layout }
-    }
+        if show_cursor {
+            let (cursor_rect, _) = self.layout.get_cursor_pos(self.cursor as i32);
+            ctx.rectangle(
+                rescale_p2c(cursor_rect.x),
+                rescale_p2c(cursor_rect.y),
+                rescale_p2c(max(cursor_rect.width, 1 * pango::SCALE)),
+                rescale_p2c(cursor_rect.height),
+            );
+            ctx.fill();
+        }
 
-    fn update(&mut self, pixel_width: i32) {
-        self.layout.set_width(pixel_width * pango::SCALE);
-        self.layout.context_changed();
+        ctx.restore();
     }
 
     fn get_logical_extents(&self) -> pango::Rectangle {
         self.layout.get_pixel_extents().1
     }
+}
 
-    fn render(&self, ctx: &cairo::Context) {
-        //show_layout requires the cursor to point to the start of the baseline
-        let extents = self.get_logical_extents();
-        ctx.rel_move_to(-extents.x as f64, -extents.y as f64);
-        pangocairo::functions::show_layout(ctx, &self.layout);
-        ctx.rel_move_to(extents.x as f64, extents.y as f64);
-    }
+fn rescale_p2c(pango_dimension: i32) -> f64 {
+    (pango_dimension as f64) / (pango::SCALE as f64)
 }

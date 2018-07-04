@@ -20,7 +20,6 @@ use futures::sync::mpsc;
 use gdk;
 use gtk::{self, DrawingArea, Window, WindowType};
 use gtk::prelude::*;
-use pangocairo;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -43,9 +42,9 @@ pub fn main(_tx: &mut mpsc::Sender<server::Event>) {
     });
 
     let sections = Rc::new(RefCell::new(vec![
-        Section::new("Lorem ipsum dolor sit amet,".into()),
-        Section::new("consectetuer adipiscing elit.".into()),
-        Section::new("Lorem ipsum dolor sit amet, consectetuer adipiscing elit.".into()),
+        Section::new(&area, "Lorem ipsum dolor sit amet,".into()),
+        Section::new(&area, "consectetuer adipiscing elit.".into()),
+        Section::new(&area, "Lorem ipsum dolor sit amet, consectetuer adipiscing elit.".into()),
     ]));
 
     let sections1 = sections.clone();
@@ -58,13 +57,14 @@ pub fn main(_tx: &mut mpsc::Sender<server::Event>) {
 
         //draw sections
         cairo_ctx.set_source_rgb(1., 1., 1.);
-        cairo_ctx.move_to(0., 0.);
+        cairo_ctx.identity_matrix();
 
-        let pango_ctx = pangocairo::functions::create_context(cairo_ctx).unwrap();
-        for section in sections1.borrow_mut().iter_mut() {
-            let height = section.prepare_rendering(pixel_width, &pango_ctx);
-            section.render(cairo_ctx);
-            cairo_ctx.rel_move_to(0., height as f64);
+        let section_count = sections1.borrow().len();
+        for (idx, section) in sections1.borrow_mut().iter_mut().enumerate() {
+            let height = section.prepare_rendering(pixel_width);
+            let show_cursor = idx == section_count - 1;
+            section.render(cairo_ctx, show_cursor);
+            cairo_ctx.translate(0., height as f64);
         }
 
         /* TODO kept for later reference
