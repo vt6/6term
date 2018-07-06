@@ -25,12 +25,12 @@ use gdk;
 use gtk::{self, DrawingArea, Window, WindowType};
 use gtk::prelude::*;
 
-use model::{CursorAction, Document};
+use model;
 use server;
 use view;
 
 ///Returns when the GUI thread is done, meaning that all other threads shall be shut down.
-pub fn main(_tx: &mut mpsc::Sender<server::Event>, document_ref: Arc<Mutex<Document>>) {
+pub fn main(_tx: &mut mpsc::Sender<server::Event>, model: Arc<Mutex<model::Document>>) {
     gtk::init().unwrap();
 
     let window = Window::new(WindowType::Toplevel);
@@ -45,7 +45,7 @@ pub fn main(_tx: &mut mpsc::Sender<server::Event>, document_ref: Arc<Mutex<Docum
     });
 
     let view = Rc::new(RefCell::new(
-        view::Document::new(document_ref.clone()),
+        view::Document::new(model.clone()),
     ));
 
     area.connect_draw(move |widget, cairo_ctx| {
@@ -58,21 +58,21 @@ pub fn main(_tx: &mut mpsc::Sender<server::Event>, document_ref: Arc<Mutex<Docum
         let keyval = event.get_keyval();
         let action = match gdk::keyval_to_unicode(keyval) {
             //Enter or Return
-            Some('\n') | Some('\r') => CursorAction::Insert("\n".into()),
+            Some('\n') | Some('\r') => model::CursorAction::Insert("\n".into()),
             //Backspace
-            Some('\u{8}') => CursorAction::DeletePreviousChar,
+            Some('\u{8}') => model::CursorAction::DeletePreviousChar,
             //Delete
-            Some('\u{7F}') => CursorAction::DeleteNextChar,
+            Some('\u{7F}') => model::CursorAction::DeleteNextChar,
             //printable character
-            Some(ch) if ch as u32 >= 32 => CursorAction::Insert(ch.to_string()),
+            Some(ch) if ch as u32 >= 32 => model::CursorAction::Insert(ch.to_string()),
             //ignore other control characters
             Some(_) => return Inhibit(false),
             //other keys
             None => {
                 use gdk::enums::key;
                 match keyval as key::Key {
-                    key::Left  | key::KP_Left  => CursorAction::GotoPreviousChar,
-                    key::Right | key::KP_Right => CursorAction::GotoNextChar,
+                    key::Left  | key::KP_Left  => model::CursorAction::GotoPreviousChar,
+                    key::Right | key::KP_Right => model::CursorAction::GotoNextChar,
                     _ => {
                         info!("unhandled keyval: {}", keyval);
                         return Inhibit(false);
@@ -80,7 +80,7 @@ pub fn main(_tx: &mut mpsc::Sender<server::Event>, document_ref: Arc<Mutex<Docum
                 }
             },
         };
-        let mut document = document_ref.lock().unwrap();
+        let mut document = model.lock().unwrap();
         if let Some(ref mut p) = document.sections.last_mut() {
             let need_redraw = p.execute_cursor_action(action);
             if need_redraw {

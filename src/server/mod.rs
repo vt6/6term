@@ -26,7 +26,7 @@ use futures::sync::mpsc;
 use tokio::prelude::*;
 use tokio_uds::UnixListener;
 
-use model::Document;
+use model;
 use self::connection::Connection;
 
 pub enum Event {}
@@ -37,11 +37,11 @@ pub struct Server {
     connections: Vec<Connection>,
     next_connection_id: u32,
     event_rx: mpsc::Receiver<Event>,
-    document_ref: Arc<Mutex<Document>>,
+    model: Arc<Mutex<model::Document>>,
 }
 
 impl Server {
-    pub fn new(socket_path: PathBuf, rx: mpsc::Receiver<Event>, document_ref: Arc<Mutex<Document>>) -> std::io::Result<Self> {
+    pub fn new(socket_path: PathBuf, rx: mpsc::Receiver<Event>, model: Arc<Mutex<model::Document>>) -> std::io::Result<Self> {
         //FIXME This opens the socket with SOCK_STREAM, but vt6/posix1 mandates
         //SOCK_SEQPACKET. I'm doing the prototyping with this for now because
         //neither mio-uds nor tokio-uds support SOCK_SEQPACKET.
@@ -53,7 +53,7 @@ impl Server {
             connections: Vec::new(),
             next_connection_id: 0,
             event_rx: rx,
-            document_ref: document_ref,
+            model: model,
         })
     }
 }
