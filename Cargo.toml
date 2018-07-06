@@ -22,3 +22,6 @@ cairo-rs = "*"
 glib = "*"
 pango = "*"
 pangocairo = "*"
+
+# misc
+bitflags = "1"

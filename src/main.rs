@@ -16,6 +16,8 @@
 *
 *******************************************************************************/
 
+#[macro_use]
+extern crate bitflags;
 extern crate cairo;
 #[macro_use]
 extern crate futures;
@@ -46,11 +48,11 @@ fn main() {
     let model = model::Document::new();
     {
         let mut document = model.lock().unwrap();
-        let s = document.make_section("Lorem ipsum dolor sit amet,".into());
+        let s = document.make_section("Lorem ipsum dolor sit amet,".into(), model::Disposition::NORMAL_OUTPUT);
         document.sections.push(s);
-        let s = document.make_section("consectetuer adipiscing elit.".into());
+        let s = document.make_section("consectetuer adipiscing elit.\n".into(), model::Disposition::NORMAL_OUTPUT);
         document.sections.push(s);
-        let s = document.make_section("Lorem ipsum dolor sit amet, consectetuer adipiscing elit.".into());
+        let s = document.make_section("Lorem ipsum dolor sit amet, consectetuer adipiscing elit.".into(), model::Disposition::CANONICAL_INPUT);
         document.sections.push(s);
     } //drop MutexGuard<Document>
 

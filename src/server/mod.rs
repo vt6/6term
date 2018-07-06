@@ -17,6 +17,7 @@
 *******************************************************************************/
 
 mod connection;
+mod stdio;
 
 use std;
 use std::path::PathBuf;
@@ -28,12 +29,14 @@ use tokio_uds::UnixListener;
 
 use model;
 use self::connection::Connection;
+use self::stdio::Stdio;
 
 pub enum Event {}
 
 pub struct Server {
     socket_path: PathBuf,
     socket: UnixListener,
+    stdio: Option<Stdio>,
     connections: Vec<Connection>,
     next_connection_id: u32,
     event_rx: mpsc::Receiver<Event>,
@@ -50,6 +53,7 @@ impl Server {
         Ok(Server {
             socket_path: socket_path,
             socket: listener,
+            stdio: None,
             connections: Vec::new(),
             next_connection_id: 0,
             event_rx: rx,
@@ -78,11 +82,31 @@ impl Future for Server {
                 return Err(()); //this error is fatal (TODO: report on GUI)
             },
             Ok(Async::Ready((stream, _))) => {
+                if self.next_connection_id == 0 {
+                    //special case for first client connection: use this as
+                    //stdio for the child process (TODO: replace with pipe(2)
+                    //for child process stdio when Tokio supports that)
+                    self.stdio = Some(Stdio::new(stream));
+                } else {
+                    self.connections.push(Connection::new(self.next_connection_id, stream));
+                }
                 self.next_connection_id += 1;
-                self.connections.push(Connection::new(self.next_connection_id, stream));
             },
             _ => {},
         };
+
+        //recurse into client stdios
+        if let Some(ref mut stdio) = self.stdio {
+            match stdio.poll(&self.model) {
+                Err(e) => {
+                    error!("error on client stdio: {}", e);
+                    return Err(()); //this error is fatal (TODO: report on GUI)
+                },
+                //"Ready" signals that the client process closed its stdout/stderr
+                Ok(Async::Ready(())) => return Ok(Async::Ready(())),
+                Ok(Async::NotReady) => {},
+            }
+        }
 
         //recurse into client connections to handle input received on them
         let mut closed_connection_ids = std::collections::hash_set::HashSet::new();
