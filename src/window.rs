@@ -16,18 +16,21 @@
 *
 *******************************************************************************/
 
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+
 use futures::sync::mpsc;
 use gdk;
 use gtk::{self, DrawingArea, Window, WindowType};
 use gtk::prelude::*;
-use std::cell::RefCell;
-use std::rc::Rc;
 
-use document::section::{CursorAction, Section};
+use model::{CursorAction, Document};
 use server;
+use view;
 
 ///Returns when the GUI thread is done, meaning that all other threads shall be shut down.
-pub fn main(_tx: &mut mpsc::Sender<server::Event>) {
+pub fn main(_tx: &mut mpsc::Sender<server::Event>, document_ref: Arc<Mutex<Document>>) {
     gtk::init().unwrap();
 
     let window = Window::new(WindowType::Toplevel);
@@ -41,46 +44,16 @@ pub fn main(_tx: &mut mpsc::Sender<server::Event>) {
         Inhibit(false)
     });
 
-    let sections = Rc::new(RefCell::new(vec![
-        Section::new(&area, "Lorem ipsum dolor sit amet,".into()),
-        Section::new(&area, "consectetuer adipiscing elit.".into()),
-        Section::new(&area, "Lorem ipsum dolor sit amet, consectetuer adipiscing elit.".into()),
-    ]));
+    let view = Rc::new(RefCell::new(
+        view::Document::new(document_ref.clone()),
+    ));
 
-    let sections1 = sections.clone();
     area.connect_draw(move |widget, cairo_ctx| {
-        let pixel_width = widget.get_allocated_width();
-
-        //draw background
-        cairo_ctx.set_source_rgb(0., 0., 0.);
-        cairo_ctx.paint();
-
-        //draw sections
-        cairo_ctx.set_source_rgb(1., 1., 1.);
-        cairo_ctx.identity_matrix();
-
-        let section_count = sections1.borrow().len();
-        for (idx, section) in sections1.borrow_mut().iter_mut().enumerate() {
-            let height = section.prepare_rendering(pixel_width);
-            let show_cursor = idx == section_count - 1;
-            section.render(cairo_ctx, show_cursor);
-            cairo_ctx.translate(0., height as f64);
-        }
-
-        /* TODO kept for later reference
-        let attr_list = pango::AttrList::new();
-        let mut attr = pango::Attribute::new_strikethrough(true).unwrap();
-        attr.set_start_index(6);
-        attr.set_end_index(10);
-        attr_list.insert(attr);
-        layout.set_attributes(&attr_list);
-        */
-
+        view.borrow_mut().render(widget, cairo_ctx);
         Inhibit(false)
     });
 
     area.add_events(gdk::EventMask::KEY_PRESS_MASK.bits() as i32);
-    let sections2 = sections.clone();
     area.connect_key_press_event(move |widget, event| {
         let keyval = event.get_keyval();
         let action = match gdk::keyval_to_unicode(keyval) {
@@ -107,7 +80,8 @@ pub fn main(_tx: &mut mpsc::Sender<server::Event>) {
                 }
             },
         };
-        if let Some(ref mut p) = sections2.borrow_mut().last_mut() {
+        let mut document = document_ref.lock().unwrap();
+        if let Some(ref mut p) = document.sections.last_mut() {
             let need_redraw = p.execute_cursor_action(action);
             if need_redraw {
                 widget.queue_draw();

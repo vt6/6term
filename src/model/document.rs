@@ -16,4 +16,27 @@
 *
 *******************************************************************************/
 
-pub mod section;
+use std::sync::{Arc, Mutex};
+
+use model;
+
+///This is the main model object that both the GUI thread and the Tokio
+///eventloop have access to.
+pub struct Document {
+    pub sections: Vec<model::Section>,
+    next_section_id: model::SectionID,
+}
+
+impl Document {
+    pub fn new() -> Arc<Mutex<Document>> {
+        Arc::new(Mutex::new(Document {
+            sections: Vec::new(),
+            next_section_id: model::SectionID::new(),
+        }))
+    }
+
+    pub fn make_section(&mut self, text: String) -> model::Section {
+        self.next_section_id.incr();
+        model::Section::new(text, self.next_section_id)
+    }
+}

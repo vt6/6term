@@ -32,19 +32,34 @@ extern crate tokio_io;
 extern crate tokio_uds;
 extern crate vt6;
 
-mod document;
+mod model;
 mod server;
+mod view;
 mod window;
 
 use futures::sync::mpsc;
 
 fn main() {
     simple_logger::init().unwrap();
+
+    //setup the model shared by all threads
+    let model = model::Document::new();
+    {
+        let mut document = model.lock().unwrap();
+        let s = document.make_section("Lorem ipsum dolor sit amet,".into());
+        document.sections.push(s);
+        let s = document.make_section("consectetuer adipiscing elit.".into());
+        document.sections.push(s);
+        let s = document.make_section("Lorem ipsum dolor sit amet, consectetuer adipiscing elit.".into());
+        document.sections.push(s);
+    } //drop MutexGuard<Document>
+
     //setup channel for communication from GUI thread to Tokio eventloop
     let (mut event_tx, event_rx) = mpsc::channel(10);
 
+
     let socket_path = std::path::PathBuf::from("./vt6term");
-    let server = match server::Server::new(socket_path, event_rx) {
+    let server = match server::Server::new(socket_path, event_rx, model.clone()) {
         Ok(s) => s,
         Err(e) => {
             error!("failed to initialize VT6 server socket: {}", e);
@@ -62,7 +77,7 @@ fn main() {
         rt.shutdown_now().wait().unwrap();
     });
 
-    window::main(&mut event_tx);
+    window::main(&mut event_tx, model);
     std::mem::drop(event_tx); //signal to server future to shutdown
     join_handle.join().unwrap();
 }

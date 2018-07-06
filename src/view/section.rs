@@ -17,89 +17,43 @@
 *******************************************************************************/
 
 use cairo;
-use gtk;
+use gtk::{self, WidgetExt};
 use pango::{self, LayoutExt};
 use pangocairo;
 
 use std::cmp::max;
 
-pub enum CursorAction {
-    Insert(String),
-    //TODO replace "Char" by "GraphemeCluster" or sth like that
-    DeletePreviousChar, //Backspace key
-    DeleteNextChar,     //Delete key
-    GotoPreviousChar,   //Left arrow key
-    GotoNextChar,       //Right arrow key
-}
+use model;
 
-///A section is some amount of text that appears on screen, starting at the
-///beginning of a line and ending at the end of a line.
+///The render state for a model::Section. This is separate from model::Section
+///because model::Section needs to implement std::marker::Send, but some things in
+///here cannot be moved away from the GUI thread.
 pub struct Section {
-    text: String, //This is private to ensure that we notice all write access.
-    text_changed: bool,
     layout: pango::Layout,
-    cursor: usize,
+    ///The last observed value of `model.generation`. When different form
+    ///`model.generation`, this means we need to update `self.layout` because the
+    ///model has changed.
+    layout_generation: u64,
 }
 
 impl Section {
-    pub fn new<W: gtk::WidgetExt>(widget: &W, text: String) -> Section {
-        let layout = widget.create_pango_layout(Some(text.as_str())).unwrap();
+    pub fn new(model: &model::Section, canvas: &gtk::DrawingArea) -> Section {
+        let layout = canvas.create_pango_layout(Some(model.text())).unwrap();
         layout.set_wrap(pango::WrapMode::WordChar);
-
-        let len = text.len();
         Section {
-            text: text,
-            text_changed: false,
             layout: layout,
-            cursor: len,
+            layout_generation: model.generation(),
         }
-    }
-
-    ///Returns whether self.text has changed.
-    pub fn execute_cursor_action(&mut self, action: CursorAction) -> bool {
-        use self::CursorAction::*;
-        match action {
-            Insert(ref text) => {
-                self.text.insert_str(self.cursor, text);
-                self.cursor = self.cursor + text.len();
-            },
-            DeletePreviousChar | GotoPreviousChar => {
-                if self.cursor == 0 { return false; }
-                //search for start of previous char
-                self.cursor -= 1;
-                while !self.text.is_char_boundary(self.cursor) {
-                    self.cursor -= 1;
-                }
-                if let DeletePreviousChar = action {
-                    self.text.remove(self.cursor);
-                }
-            },
-            DeleteNextChar => {
-                if self.cursor == self.text.len() { return false; }
-                self.text.remove(self.cursor); //cursor does not move
-            },
-            GotoNextChar => {
-                if self.cursor == self.text.len() { return false; }
-                self.cursor += 1;
-                while !self.text.is_char_boundary(self.cursor) {
-                    self.cursor += 1;
-                }
-            },
-        }
-
-        //text was changed
-        self.text_changed = true;
-        true
     }
 
     ///Returns the local height that the section occupies on screen.
     ///FIXME Docs are unclear about whether this is in pixels or something
     ///else, so HiDPI rendering might be broken.
-    pub fn prepare_rendering(&mut self, pixel_width: i32) -> i32 {
+    pub fn prepare_rendering(&mut self, model: &model::Section, pixel_width: i32) -> i32 {
         self.layout.set_width(pixel_width * pango::SCALE);
-        if self.text_changed {
-            self.layout.set_text(&self.text);
-            self.text_changed = false;
+        if self.layout_generation != model.generation() {
+            self.layout.set_text(&model.text());
+            self.layout_generation = model.generation();
         }
 
         //Pango context may have been attached to a new Cairo context
@@ -111,7 +65,7 @@ impl Section {
     ///The current coordinates of the cairo::Context must be at the
     ///upper left corner of the section.
     ///FIXME check with RTL text and RTL locale
-    pub fn render(&self, ctx: &cairo::Context, show_cursor: bool) {
+    pub fn render(&self, model: &model::Section, ctx: &cairo::Context, show_cursor: bool) {
         ctx.save();
 
         //show_layout requires the cursor to point to the start of the baseline
@@ -120,7 +74,7 @@ impl Section {
         pangocairo::functions::show_layout(ctx, &self.layout);
 
         if show_cursor {
-            let (cursor_rect, _) = self.layout.get_cursor_pos(self.cursor as i32);
+            let (cursor_rect, _) = self.layout.get_cursor_pos(model.cursor() as i32);
             ctx.rectangle(
                 rescale_p2c(cursor_rect.x),
                 rescale_p2c(cursor_rect.y),
