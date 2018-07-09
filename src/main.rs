@@ -19,11 +19,13 @@
 #[macro_use]
 extern crate bitflags;
 extern crate cairo;
+extern crate fragile;
 #[macro_use]
 extern crate futures;
 extern crate gdk;
 extern crate glib;
 extern crate gtk;
+extern crate libc;
 #[macro_use]
 extern crate log;
 extern crate pango;

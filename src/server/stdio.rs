@@ -61,7 +61,9 @@ impl Stdio {
                         break;
                     }
                 }
-                //TODO: schedule a re-render in the GUI thread
+                //TODO: handle redraw centrally in the server future
+                use window;
+                window::redraw();
             },
         }
 

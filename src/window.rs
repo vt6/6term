@@ -21,9 +21,12 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use futures::sync::mpsc;
+use fragile::Sticky;
 use gdk;
+use glib;
 use gtk::{self, DrawingArea, Window, WindowType};
 use gtk::prelude::*;
+use libc;
 
 use model;
 use server;
@@ -35,9 +38,17 @@ pub fn main(_tx: &mut mpsc::Sender<server::Event>, model: Arc<Mutex<model::Docum
 
     let window = Window::new(WindowType::Toplevel);
     window.set_title("6term");
-    let area = DrawingArea::new();
-    window.add(&area);
+    let area = Rc::new(DrawingArea::new());
+    window.add(area.as_ref());
     window.show_all();
+
+    //setup SIGUSR1 as a hacky means for the Tokio eventloop to notify this
+    //thread to redraw the GUI (TODO: replace by something less hacky maybe)
+    let area_ref = Sticky::new(area.clone());
+    glib::source::unix_signal_add(libc::SIGUSR1, move || {
+        area_ref.get().queue_draw();
+        glib::Continue(true)
+    });
 
     window.connect_delete_event(|_,_| {
         gtk::main_quit();
@@ -94,4 +105,9 @@ pub fn main(_tx: &mut mpsc::Sender<server::Event>, model: Arc<Mutex<model::Docum
     area.grab_focus();
 
     gtk::main();
+}
+
+///Can be called by any thread to trigger a redraw of the GUI.
+pub fn redraw() {
+    unsafe { libc::kill(libc::getpid(), libc::SIGUSR1); }
 }
