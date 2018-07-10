@@ -51,16 +51,14 @@ fn main() {
     let model = model::Document::new();
     {
         let mut document = model.lock().unwrap();
-        let s = document.make_section("Lorem ipsum dolor sit amet,".into(), model::Disposition::NORMAL_OUTPUT);
+        let s = document.make_section(String::new(), model::Disposition::NORMAL_OUTPUT);
         document.sections.push(s);
-        let s = document.make_section("consectetuer adipiscing elit.\n".into(), model::Disposition::NORMAL_OUTPUT);
-        document.sections.push(s);
-        let s = document.make_section("Lorem ipsum dolor sit amet, consectetuer adipiscing elit.".into(), model::Disposition::CANONICAL_INPUT);
+        let s = document.make_section(String::new(), model::Disposition::CANONICAL_INPUT);
         document.sections.push(s);
     } //drop MutexGuard<Document>
 
     //setup channel for communication from GUI thread to Tokio eventloop
-    let (mut event_tx, event_rx) = mpsc::channel(10);
+    let (event_tx, event_rx) = mpsc::channel(10);
 
 
     let socket_path = std::path::PathBuf::from("./vt6term");
@@ -94,8 +92,7 @@ fn main() {
         }
     });
 
-    win.main(&mut event_tx, model);
-    std::mem::drop(event_tx); //signal to server future to shutdown
+    win.main(event_tx, model);
     join_handle1.join().unwrap();
     join_handle2.join().unwrap();
 }

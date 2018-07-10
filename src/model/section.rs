@@ -16,6 +16,8 @@
 *
 *******************************************************************************/
 
+use std;
+
 pub enum CursorAction {
     Insert(String),
     //TODO replace "Char" by "GraphemeCluster" or sth like that
@@ -23,6 +25,13 @@ pub enum CursorAction {
     DeleteNextChar,     //Delete key
     GotoPreviousChar,   //Left arrow key
     GotoNextChar,       //Right arrow key
+}
+
+#[derive(PartialEq,Eq)]
+pub enum CursorActionResult {
+    Unchanged,
+    Changed,
+    LineCompleted(String),
 }
 
 bitflags! {
@@ -111,24 +120,32 @@ impl Section {
     ///Returns whether the text in this section has changed.
     ///NOTE: Can only be used with disposition() == Disposition::CANONICAL_INPUT.
     ///TODO: split Section into subtypes for each valid disposition
-    pub fn execute_cursor_action(&mut self, action: CursorAction) -> bool {
-        let changed = self.execute_cursor_action_priv(action);
-        if changed {
+    pub fn execute_cursor_action(&mut self, action: CursorAction) -> CursorActionResult {
+        let result = self.execute_cursor_action_priv(action);
+        if result != CursorActionResult::Unchanged {
             self.generation += 1;
         }
-        changed
+        result
     }
 
-    fn execute_cursor_action_priv(&mut self, action: CursorAction) -> bool {
+    fn execute_cursor_action_priv(&mut self, action: CursorAction) -> CursorActionResult {
         use self::CursorAction::*;
+        use self::CursorActionResult::*;
         match action {
             Insert(ref text) => {
                 self.text.insert_str(self.cursor, text);
                 self.cursor = self.cursor + text.len();
-                true
+                if self.text.ends_with("\n") {
+                    let mut value = String::new();
+                    std::mem::swap(&mut value, &mut self.text);
+                    self.cursor = 0;
+                    LineCompleted(value)
+                } else {
+                    Changed
+                }
             },
             DeletePreviousChar | GotoPreviousChar => {
-                if self.cursor == 0 { return false; }
+                if self.cursor == 0 { return Unchanged; }
                 //search for start of previous char
                 self.cursor -= 1;
                 while !self.text.is_char_boundary(self.cursor) {
@@ -137,20 +154,20 @@ impl Section {
                 if let DeletePreviousChar = action {
                     self.text.remove(self.cursor);
                 }
-                true
+                Changed
             },
             DeleteNextChar => {
-                if self.cursor == self.text.len() { return false; }
+                if self.cursor == self.text.len() { return Unchanged; }
                 self.text.remove(self.cursor); //cursor does not move
-                true
+                Changed
             },
             GotoNextChar => {
-                if self.cursor == self.text.len() { return false; }
+                if self.cursor == self.text.len() { return Unchanged; }
                 self.cursor += 1;
                 while !self.text.is_char_boundary(self.cursor) {
                     self.cursor += 1;
                 }
-                true
+                Changed
             },
         }
     }

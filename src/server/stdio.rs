@@ -31,6 +31,7 @@ use model;
 pub struct Stdio {
     stream: UnixStream,
     read_buffer: Vec<u8>,
+    write_buffer: Vec<u8>,
 }
 
 impl Stdio {
@@ -38,16 +39,21 @@ impl Stdio {
         Stdio {
             stream: stream,
             read_buffer: vec![0; 1024],
+            write_buffer: Vec::new(),
         }
     }
 
-    pub fn poll(&mut self, model: &Arc<Mutex<model::Document>>) -> Poll<(), std::io::Error> {
-        let mut restart = true;
+    pub fn add_user_input(&mut self, t: &str) {
+        self.write_buffer.extend(t.bytes());
+    }
 
-        //check if the client send us some output
+    pub fn poll(&mut self, model: &Arc<Mutex<model::Document>>) -> Poll<(), std::io::Error> {
+        let mut restart = false;
+
+        //check if the client sent us some output
         match self.stream.poll_read(&mut self.read_buffer[..]) {
             Err(e) => return Err(e),
-            Ok(Async::NotReady) => restart = false,
+            Ok(Async::NotReady) => {},
             Ok(Async::Ready(bytes_read)) => {
                 if bytes_read == 0 {
                     return Ok(Async::Ready(())); //EOF
@@ -61,13 +67,26 @@ impl Stdio {
                         break;
                     }
                 }
+                restart = true; //immediately try receiving more
+
                 //TODO: handle redraw centrally in the server future
                 use window;
                 window::redraw();
             },
         }
 
-        //TODO: check if we can send the client some input
+        //check if we can send the client some input
+        if self.write_buffer.len() > 0 {
+            match self.stream.poll_write(&self.write_buffer[..]) {
+                Err(e) => return Err(e),
+                Ok(Async::NotReady) => {},
+                Ok(Async::Ready(bytes_written)) => {
+                    //remove the written bytes from the write buffer
+                    self.write_buffer = self.write_buffer.split_off(bytes_written);
+                    restart = true; //immediately try sending more
+                },
+            }
+        }
 
         if restart {
             self.poll(model)

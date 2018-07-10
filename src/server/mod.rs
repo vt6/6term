@@ -31,7 +31,9 @@ use model;
 use self::connection::Connection;
 use self::stdio::Stdio;
 
-pub enum Event {}
+pub enum Event {
+    UserInput(String),
+}
 
 pub struct Server {
     socket_path: PathBuf,
@@ -135,7 +137,17 @@ impl Future for Server {
             Ok(Async::NotReady) => Ok(Async::NotReady),
             //closed channel signals shutdown request from GUI thread
             Ok(Async::Ready(None)) => Ok(Async::Ready(())),
-            Ok(Async::Ready(Some(_))) => Ok(Async::NotReady), //TODO placeholder
+            Ok(Async::Ready(Some(event))) => {
+                match event {
+                    Event::UserInput(s) => {
+                        if let Some(ref mut stdio) = self.stdio {
+                            stdio.add_user_input(&s);
+                        }
+                    },
+                }
+                //restart function call to send outstanding messages implied by this event
+                self.poll()
+            },
         }
     }
 }

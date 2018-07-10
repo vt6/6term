@@ -61,7 +61,7 @@ impl Window {
     }
 
     ///Returns when the GUI thread is done, meaning that all other threads shall be shut down.
-    pub fn main(&mut self, _tx: &mut mpsc::Sender<server::Event>, model: Arc<Mutex<model::Document>>) {
+    pub fn main(&mut self, tx: mpsc::Sender<server::Event>, model: Arc<Mutex<model::Document>>) {
 
         self.window.connect_delete_event(|_,_| {
             gtk::main_quit();
@@ -76,6 +76,8 @@ impl Window {
             view.borrow_mut().render(widget, cairo_ctx);
             Inhibit(false)
         });
+
+        let tx = Rc::new(RefCell::new(tx));
 
         self.area.add_events(gdk::EventMask::KEY_PRESS_MASK.bits() as i32);
         self.area.connect_key_press_event(move |widget, event| {
@@ -106,9 +108,14 @@ impl Window {
             };
             let mut document = model.lock().unwrap();
             if let Some(ref mut p) = document.sections.last_mut() {
-                let need_redraw = p.execute_cursor_action(action);
-                if need_redraw {
-                    widget.queue_draw();
+                match p.execute_cursor_action(action) {
+                    model::CursorActionResult::Unchanged => {},
+                    model::CursorActionResult::Changed => widget.queue_draw(),
+                    model::CursorActionResult::LineCompleted(s) => {
+                        widget.queue_draw();
+                        //TODO check return value from try_send
+                        tx.borrow_mut().try_send(server::Event::UserInput(s)).unwrap();
+                    },
                 }
             }
             Inhibit(true)
