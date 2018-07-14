@@ -74,7 +74,7 @@ impl Section {
         pangocairo::functions::show_layout(ctx, &self.layout);
 
         if show_cursor {
-            let (cursor_rect, _) = self.layout.get_cursor_pos(model.cursor() as i32);
+            let (cursor_rect, _) = self.layout.get_cursor_pos(model.input_cursor() as i32);
             ctx.rectangle(
                 rescale_p2c(cursor_rect.x),
                 rescale_p2c(cursor_rect.y),

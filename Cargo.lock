@@ -727,7 +727,6 @@ dependencies = [
 name = "vt6term"
 version = "0.1.0"
 dependencies = [
- "bitflags 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "cairo-rs 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.21 (registry+https://github.com/rust-lang/crates.io-index)",
  "gdk 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",

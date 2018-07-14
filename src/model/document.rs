@@ -35,8 +35,8 @@ impl Document {
         }))
     }
 
-    pub fn make_section(&mut self, text: String, disposition: model::Disposition) -> model::Section {
+    pub fn make_section(&mut self) -> model::Section {
         self.next_section_id.incr();
-        model::Section::new(text, self.next_section_id, disposition)
+        model::Section::new(self.next_section_id)
     }
 }

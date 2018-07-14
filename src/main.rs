@@ -16,8 +16,6 @@
 *
 *******************************************************************************/
 
-#[macro_use]
-extern crate bitflags;
 extern crate cairo;
 #[macro_use]
 extern crate futures;
@@ -50,9 +48,7 @@ fn main() {
     let model = model::Document::new();
     {
         let mut document = model.lock().unwrap();
-        let s = document.make_section(String::new(), model::Disposition::NORMAL_OUTPUT);
-        document.sections.push(s);
-        let s = document.make_section(String::new(), model::Disposition::CANONICAL_INPUT);
+        let s = document.make_section();
         document.sections.push(s);
     } //drop MutexGuard<Document>
 
@@ -79,7 +75,7 @@ fn main() {
     });
 
     let join_handle2 = std::thread::spawn(move || {
-        let result = spawn_client(socket_path, vec!["/bin/sh".into(), "-i".into()]);
+        let result = spawn_client(socket_path, vec!["/bin/bash".into(), "-i".into()]);
         use nix::sys::wait::WaitStatus::*;
         match result {
             Err(e) => error!("spawn_client failed: {}", e),

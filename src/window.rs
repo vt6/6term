@@ -103,7 +103,7 @@ impl Window {
             };
             let mut document = model.lock().unwrap();
             if let Some(ref mut p) = document.sections.last_mut() {
-                match p.execute_cursor_action(action) {
+                match p.execute_input_action(action) {
                     model::CursorActionResult::Unchanged => {},
                     model::CursorActionResult::Changed => widget.queue_draw(),
                     model::CursorActionResult::LineCompleted(s) => {

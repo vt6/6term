@@ -24,5 +24,4 @@ pango = "*"
 pangocairo = "*"
 
 # misc
-bitflags = "1"
 nix = "^0.11"

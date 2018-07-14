@@ -61,11 +61,8 @@ impl Stdio {
                 let str_read = String::from_utf8_lossy(&self.read_buffer[0..bytes_read]);
                 let mut document = model.lock().unwrap();
                 //append the received output to bottom-most output section
-                for section in document.sections.iter_mut().rev() {
-                    if section.disposition().contains(model::Disposition::NORMAL_OUTPUT) {
-                        section.append_text(str_read);
-                        break;
-                    }
+                if let Some(section) = document.sections.last_mut() {
+                    section.append_output(&str_read);
                 }
                 restart = true; //immediately try receiving more
                 *needs_redraw = true; //instruct server to trigger redraw

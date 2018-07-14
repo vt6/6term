@@ -16,8 +16,6 @@
 *
 *******************************************************************************/
 
-use std;
-
 pub enum CursorAction {
     Insert(String),
     //TODO replace "Char" by "GraphemeCluster" or sth like that
@@ -32,24 +30,6 @@ pub enum CursorActionResult {
     Unchanged,
     Changed,
     LineCompleted(String),
-}
-
-bitflags! {
-    ///Indicates what a Section is used for.
-    pub struct Disposition: u32 {
-        ///Section contains output from client programs. When a client program writes text into a
-        ///frame, it will be appended to the bottom-most section with a `Display` disposition.
-        const NORMAL_OUTPUT = 0x0001;
-        ///Bit mask for flags indicating output behavior.
-        const OUTPUT_MASK = 0x000F;
-        ///Section contains input being prepared by the user for a frame that is operating in
-        ///canonical input mode.
-        const CANONICAL_INPUT = 0x0010;
-        ///Section accepts raw input events from the user.
-        const RAW_INPUT = 0x0020;
-        ///Bit mask for flags indicating input behavior.
-        const INPUT_MASK = 0x00F0;
-    }
 }
 
 ///Unique identifier for a section. This is a separate type to ensure that it is
@@ -71,9 +51,14 @@ impl SectionID {
 ///beginning of a line and ending at the end of a line.
 pub struct Section {
     id: SectionID,
-    disposition: Disposition,
     text: String,
-    cursor: usize,
+    ///Index into self.text where output from client programs will be appended. Everything before
+    ///this cursor is client output, everything after this cursor is user input not yet submitted
+    ///to a client program's stdin.
+    output_cursor: usize,
+    ///Index into self.text where user input is being inserted. This is always trailing the
+    ///self.output_cursor (i.e., `self.output_cursor <= self.input_cursor`); see above for details.
+    input_cursor: usize,
     ///This counter increases whenever this section is changed. It is used to
     ///indicate to the view when re-layouting is necessary.
     generation: u64,
@@ -81,13 +66,12 @@ pub struct Section {
 
 impl Section {
     ///Use Document::make_section() instead.
-    pub fn new(text: String, id: SectionID, disposition: Disposition) -> Section {
-        let len = text.len();
+    pub fn new(id: SectionID) -> Section {
         Section {
             id: id,
-            disposition: disposition,
-            text: text,
-            cursor: len,
+            text: String::new(),
+            output_cursor: 0,
+            input_cursor: 0,
             generation: 0,
         }
     }
@@ -95,77 +79,71 @@ impl Section {
     pub fn id(&self) -> SectionID {
         self.id
     }
-    pub fn disposition(&self) -> Disposition {
-        self.disposition
-    }
     pub fn text(&self) -> &str {
         self.text.as_str()
     }
-    pub fn cursor(&self) -> usize {
-        self.cursor
+    pub fn input_cursor(&self) -> usize {
+        self.input_cursor
     }
     pub fn generation(&self) -> u64 {
         self.generation
     }
 
     ///Appends additional output to this section.
-    ///NOTE: Can only be used with disposition() == Disposition::NORMAL_OUTPUT.
-    ///TODO: split Section into subtypes for each valid disposition
-    pub fn append_text<T>(&mut self, text: T)
-        where String: Extend<T> {
-        self.text.extend(Some(text));
+    pub fn append_output(&mut self, text: &str) {
+        self.text.insert_str(self.output_cursor, text);
+        let len = text.len();
+        self.input_cursor += len;
+        self.output_cursor += len;
         self.generation += 1;
     }
 
     ///Returns whether the text in this section has changed.
-    ///NOTE: Can only be used with disposition() == Disposition::CANONICAL_INPUT.
-    ///TODO: split Section into subtypes for each valid disposition
-    pub fn execute_cursor_action(&mut self, action: CursorAction) -> CursorActionResult {
-        let result = self.execute_cursor_action_priv(action);
+    pub fn execute_input_action(&mut self, action: CursorAction) -> CursorActionResult {
+        let result = self.execute_input_action_priv(action);
         if result != CursorActionResult::Unchanged {
             self.generation += 1;
         }
         result
     }
 
-    fn execute_cursor_action_priv(&mut self, action: CursorAction) -> CursorActionResult {
+    fn execute_input_action_priv(&mut self, action: CursorAction) -> CursorActionResult {
         use self::CursorAction::*;
         use self::CursorActionResult::*;
         match action {
             Insert(ref text) => {
-                self.text.insert_str(self.cursor, text);
-                self.cursor = self.cursor + text.len();
-                if self.text.ends_with("\n") {
-                    let mut value = String::new();
-                    std::mem::swap(&mut value, &mut self.text);
-                    self.cursor = 0;
-                    LineCompleted(value)
+                self.text.insert_str(self.input_cursor, text);
+                self.input_cursor = self.input_cursor + text.len();
+                if self.text.ends_with("\n") && self.input_cursor == self.text.len() {
+                    let input = self.text.split_off(self.output_cursor);
+                    self.input_cursor = self.output_cursor;
+                    LineCompleted(input)
                 } else {
                     Changed
                 }
             },
             DeletePreviousChar | GotoPreviousChar => {
-                if self.cursor == 0 { return Unchanged; }
+                if self.input_cursor <= self.output_cursor { return Unchanged; }
                 //search for start of previous char
-                self.cursor -= 1;
-                while !self.text.is_char_boundary(self.cursor) {
-                    self.cursor -= 1;
+                self.input_cursor -= 1;
+                while !self.text.is_char_boundary(self.input_cursor) {
+                    self.input_cursor -= 1;
                 }
                 if let DeletePreviousChar = action {
-                    self.text.remove(self.cursor);
+                    self.text.remove(self.input_cursor);
                 }
                 Changed
             },
             DeleteNextChar => {
-                if self.cursor == self.text.len() { return Unchanged; }
-                self.text.remove(self.cursor); //cursor does not move
+                if self.input_cursor == self.text.len() { return Unchanged; }
+                self.text.remove(self.input_cursor); //cursor does not move
                 Changed
             },
             GotoNextChar => {
-                if self.cursor == self.text.len() { return Unchanged; }
-                self.cursor += 1;
-                while !self.text.is_char_boundary(self.cursor) {
-                    self.cursor += 1;
+                if self.input_cursor == self.text.len() { return Unchanged; }
+                self.input_cursor += 1;
+                while !self.text.is_char_boundary(self.input_cursor) {
+                    self.input_cursor += 1;
                 }
                 Changed
             },
