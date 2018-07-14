@@ -21,20 +21,19 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use futures::sync::mpsc;
-use fragile::Sticky;
 use gdk;
 use glib;
 use gtk::{self, DrawingArea, Window as GtkWindow, WindowType};
 use gtk::prelude::*;
-use libc;
 
 use model;
 use server;
+use util::AnchoredArc;
 use view;
 
 pub struct Window {
     window: GtkWindow,
-    area: Rc<DrawingArea>,
+    area: AnchoredArc<DrawingArea>,
 }
 
 impl Window {
@@ -43,21 +42,17 @@ impl Window {
 
         let w = Window {
             window: GtkWindow::new(WindowType::Toplevel),
-            area: Rc::new(DrawingArea::new()),
+            area: AnchoredArc::new(DrawingArea::new()),
         };
         w.window.set_title("6term");
         w.window.add(w.area.as_ref());
         w.window.show_all();
 
-        //setup SIGUSR1 as a hacky means for the Tokio eventloop to notify this
-        //thread to redraw the GUI (TODO: replace by something less hacky maybe)
-        let area_ref = Sticky::new(w.area.clone());
-        glib::source::unix_signal_add(libc::SIGUSR1, move || {
-            area_ref.get().queue_draw();
-            glib::Continue(true)
-        });
-
         w
+    }
+
+    pub fn handle(&self) -> WindowHandle {
+        WindowHandle(self.area.clone())
     }
 
     ///Returns when the GUI thread is done, meaning that all other threads shall be shut down.
@@ -128,7 +123,15 @@ impl Window {
     }
 }
 
-///Can be called by any thread to trigger a redraw of the GUI.
-pub fn redraw() {
-    unsafe { libc::kill(libc::getpid(), libc::SIGUSR1); }
+pub struct WindowHandle(AnchoredArc<DrawingArea>);
+
+impl WindowHandle {
+    ///Can be called by any thread to trigger a redraw of the GUI.
+    pub fn redraw(&self) {
+        let anchored_arc = self.0.clone();
+        glib::idle_add(move || {
+            anchored_arc.queue_draw();
+            Continue(false)
+        });
+    }
 }

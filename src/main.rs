@@ -19,13 +19,11 @@
 #[macro_use]
 extern crate bitflags;
 extern crate cairo;
-extern crate fragile;
 #[macro_use]
 extern crate futures;
 extern crate gdk;
 extern crate glib;
 extern crate gtk;
-extern crate libc;
 #[macro_use]
 extern crate log;
 extern crate nix;
@@ -41,6 +39,7 @@ mod model;
 mod server;
 mod view;
 mod window;
+mod util;
 
 use futures::sync::mpsc;
 
@@ -59,18 +58,16 @@ fn main() {
 
     //setup channel for communication from GUI thread to Tokio eventloop
     let (event_tx, event_rx) = mpsc::channel(10);
-
+    let mut win = window::Window::new();
 
     let socket_path = std::path::PathBuf::from("./vt6term");
-    let server = match server::Server::new(socket_path.clone(), event_rx, model.clone()) {
+    let server = match server::Server::new(socket_path.clone(), event_rx, model.clone(), win.handle()) {
         Ok(s) => s,
         Err(e) => {
             error!("failed to initialize VT6 server socket: {}", e);
             std::process::exit(1);
         },
     };
-
-    let mut win = window::Window::new();
 
     let join_handle1 = std::thread::spawn(move || {
         use futures::Future;

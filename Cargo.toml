@@ -25,6 +25,4 @@ pangocairo = "*"
 
 # misc
 bitflags = "1"
-fragile = "0.2.1"
-libc = "*"
 nix = "^0.11"

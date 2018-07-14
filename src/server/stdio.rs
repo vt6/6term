@@ -47,7 +47,7 @@ impl Stdio {
         self.write_buffer.extend(t.bytes());
     }
 
-    pub fn poll(&mut self, model: &Arc<Mutex<model::Document>>) -> Poll<(), std::io::Error> {
+    pub fn poll(&mut self, model: &Arc<Mutex<model::Document>>, needs_redraw: &mut bool) -> Poll<(), std::io::Error> {
         let mut restart = false;
 
         //check if the client sent us some output
@@ -68,10 +68,7 @@ impl Stdio {
                     }
                 }
                 restart = true; //immediately try receiving more
-
-                //TODO: handle redraw centrally in the server future
-                use window;
-                window::redraw();
+                *needs_redraw = true; //instruct server to trigger redraw
             },
         }
 
@@ -89,7 +86,7 @@ impl Stdio {
         }
 
         if restart {
-            self.poll(model)
+            self.poll(model, needs_redraw)
         } else {
             Ok(Async::NotReady)
         }

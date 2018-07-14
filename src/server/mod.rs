@@ -30,6 +30,7 @@ use tokio_uds::UnixListener;
 use model;
 use self::connection::Connection;
 use self::stdio::Stdio;
+use window;
 
 pub enum Event {
     UserInput(String),
@@ -43,10 +44,11 @@ pub struct Server {
     next_connection_id: u32,
     event_rx: mpsc::Receiver<Event>,
     model: Arc<Mutex<model::Document>>,
+    window_handle: window::WindowHandle,
 }
 
 impl Server {
-    pub fn new(socket_path: PathBuf, rx: mpsc::Receiver<Event>, model: Arc<Mutex<model::Document>>) -> std::io::Result<Self> {
+    pub fn new(socket_path: PathBuf, rx: mpsc::Receiver<Event>, model: Arc<Mutex<model::Document>>, window_handle: window::WindowHandle) -> std::io::Result<Self> {
         //FIXME This opens the socket with SOCK_STREAM, but vt6/posix1 mandates
         //SOCK_SEQPACKET. I'm doing the prototyping with this for now because
         //neither mio-uds nor tokio-uds support SOCK_SEQPACKET.
@@ -60,6 +62,7 @@ impl Server {
             next_connection_id: 0,
             event_rx: rx,
             model: model,
+            window_handle: window_handle,
         })
     }
 }
@@ -77,6 +80,8 @@ impl Future for Server {
     type Error = ();
 
     fn poll(&mut self) -> Poll<(), ()> {
+        let mut needs_redraw = false;
+
         //check for new client connections
         match self.socket.poll_accept() {
             Err(e) => {
@@ -99,7 +104,7 @@ impl Future for Server {
 
         //recurse into client stdios
         if let Some(ref mut stdio) = self.stdio {
-            match stdio.poll(&self.model) {
+            match stdio.poll(&self.model, &mut needs_redraw) {
                 Err(e) => {
                     error!("error on client stdio: {}", e);
                     return Err(()); //this error is fatal (TODO: report on GUI)
@@ -108,6 +113,10 @@ impl Future for Server {
                 Ok(Async::Ready(())) => return Ok(Async::Ready(())),
                 Ok(Async::NotReady) => {},
             }
+        }
+
+        if needs_redraw {
+            self.window_handle.redraw();
         }
 
         //recurse into client connections to handle input received on them
