@@ -17,18 +17,16 @@
 *******************************************************************************/
 
 use std;
-use std::vec::Vec;
 
 use tokio::prelude::*;
 use tokio_io::AsyncRead;
 use tokio_uds::UnixStream;
 use vt6::core::msg;
-use vt6::core::msg::Parse;
 
 pub struct Connection {
     id: u32,
     stream: UnixStream,
-    recv_buffer: RecvBuffer,
+    recv: RecvBuffer,
 }
 
 impl Connection {
@@ -37,7 +35,7 @@ impl Connection {
         Connection {
             id: id,
             stream: stream,
-            recv_buffer: RecvBuffer::new(),
+            recv: RecvBuffer::new(),
         }
     }
 
@@ -57,30 +55,18 @@ impl Future for Connection {
     type Error = std::io::Error;
 
     fn poll(&mut self) -> Poll<(), std::io::Error> {
-        match try_ready!(self.recv_buffer.poll_recv(&mut self.stream)) {
-            RecvItem::Message(sexp) => {
-                info!("message received on connection {}: {}", self.id, sexp);
-                //TODO: do something with it
-            },
-            RecvItem::Discarded(text, err) => {
-                error!("input discarded on connection {}: {:?}", self.id, text);
-                error!("-> reason: {}", err);
-            },
-            RecvItem::EOF => {
-                return Ok(Async::Ready(()));
-            },
-        }
+        //spell it out to the borrow checker that we're *not* borrowing `self` into the closure
+        //below
+        let self_id = self.id;
 
-        //attempt to read next message immediately
-        self.poll()
+        self.recv.poll(&mut self.stream, self.id, |msg| {
+            trace!("message received on connection {}: {}", self_id, msg);
+            //TODO: pass `msg` to handler
+        })
     }
 }
 
-enum RecvItem {
-    EOF,
-    Message(msg::Message),
-    Discarded(String, msg::ParseError),
-}
+////////////////////////////////////////////////////////////////////////////////
 
 struct RecvBuffer {
     buf: Vec<u8>,
@@ -90,45 +76,6 @@ struct RecvBuffer {
 impl RecvBuffer {
     fn new() -> Self {
         RecvBuffer { buf: vec![0; 1024], fill: 0 }
-    }
-
-    pub fn poll_recv<R>(&mut self, reader: &mut R) -> Poll<RecvItem, std::io::Error>
-        where R: AsyncRead
-    {
-        let (parse_result, bytes_consumed) = {
-            let mut state = msg::ParserState::new(&self.buf[0..self.fill]);
-            let result = msg::Message::parse(&mut state);
-            (result, state.cursor)
-        };
-
-        match parse_result {
-            Ok(sexp) => {
-                self.discard(bytes_consumed);
-                Ok(Async::Ready(RecvItem::Message(sexp)))
-            },
-            Err(ref e) if e.kind == msg::ParseErrorKind::UnexpectedEOF && self.fill < self.buf.len() => {
-                //we may have not read the entire message yet
-                if self.fill < self.buf.len() {
-                    let bytes_read = try_ready!(reader.poll_read(&mut self.buf[self.fill..]));;
-                    self.fill += bytes_read;
-                    if bytes_read == 0 {
-                        return Ok(Async::Ready(RecvItem::EOF));
-                    }
-                }
-                self.poll_recv(reader)
-            },
-            Err(e) => {
-                //parser error -> reset the stream parser [vt6/core1.0; sect. 2.4]
-                let bytes_to_discard = self.buf.iter().skip(1).position(|&c| c == b'(')
-                    .map(|x| x + 1).unwrap_or(self.fill);
-                //^ The .skip(1) is necessary to ensure that bytes_to_discard > 0. Otherwise an
-                //invalid message type may lead to an infinite loop, e.g. for self.buf == "(foo)".
-                //The .map() compensates the effect of .skip(1) on the index.
-                let discarded = String::from_utf8_lossy(&self.buf[0..bytes_to_discard]).into();
-                self.discard(bytes_to_discard);
-                Ok(Async::Ready(RecvItem::Discarded(discarded, e)))
-            },
-        }
     }
 
     ///Discards the given number of bytes from the buffer and shifts the remaining bytes to the
@@ -143,4 +90,61 @@ impl RecvBuffer {
         }
         self.fill = remaining;
     }
+
+    fn poll<R, F>(&mut self, reader: &mut R, connection_id: u32, mut handle_message: F) -> Poll<(), std::io::Error>
+        where R: AsyncRead,
+              F: FnMut(&msg::Message) {
+        //NOTE: We cannot handle `bytes_to_discard` and `incomplete` directly
+        //inside the match arms because the reference to `self.buf` needs to go
+        //out of scope first.
+        let (bytes_to_discard, incomplete) = match msg::Message::parse(&self.buf[0..self.fill]) {
+            Ok((msg, bytes_consumed)) => {
+                handle_message(&msg);
+                (bytes_consumed, false)
+            },
+            Err(ref e) if e.kind == msg::ParseErrorKind::UnexpectedEOF && self.fill < self.buf.len() => {
+                (0, true)
+            },
+            Err(e) => {
+                //parser error -> reset the stream parser [vt6/core1.0; sect. 2.3]
+                let bytes_to_discard = self.buf.iter().skip(1).position(|&c| c == b'{')
+                    .map(|x| x + 1).unwrap_or(self.fill);
+                //^ The .skip(1) is necessary to ensure that bytes_to_discard > 0.
+                //The .map() compensates the effect of .skip(1) on the index.
+                let discarded = String::from_utf8_lossy(&self.buf[0..bytes_to_discard]);
+                error!("input discarded on connection {}: {:?}", connection_id, discarded);
+                error!("-> reason: {}", e);
+                (bytes_to_discard, false)
+            },
+        };
+
+        if incomplete {
+            //it appears we have not read a full message yet
+            if self.fill < self.buf.len() {
+                let bytes_read = try_ready!(reader.poll_read(&mut self.buf[self.fill..]));;
+                self.fill += bytes_read;
+                if bytes_read == 0 {
+                    //EOF - if we still have something in the buffer, it's an
+                    //unfinished message -> complain
+                    if self.fill > 0 {
+                        let err = msg::Message::parse(&self.buf[0..self.fill]).unwrap_err();
+                        let discarded = String::from_utf8_lossy(&self.buf[0..self.fill]);
+                        error!("input discarded on connection {}: {:?}", connection_id, discarded);
+                        error!("-> reason: {}", err);
+                    }
+                    return Ok(Async::Ready(()));
+                }
+            }
+            //restart handler with the new data
+            return self.poll(reader, connection_id, handle_message);
+        }
+
+        //we have read something (either a message or a definitive parser
+        //error), so now we need to discard the bytes that were processed from
+        //the recv buffer
+        self.discard(bytes_to_discard);
+        //attempt to read the next message immediately
+        self.poll(reader, connection_id, handle_message)
+    }
+
 }
