@@ -21,14 +21,21 @@ use std;
 use tokio::prelude::*;
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio_uds::UnixStream;
+use vt6;
 use vt6::core::msg;
 
+use server::connection_state::*;
+
 pub struct Connection {
-    id: u32,
-    reader: ReadHalf<UnixStream>,
-    writer: WriteHalf<UnixStream>,
-    recv: RecvBuffer,
-    send: SendBuffer,
+    state: ConnectionState,
+    recv: RecvBuffer<UnixStream>,
+    send: SendBuffer<UnixStream>,
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        info!("connection {} terminated", self.state.id());
+    }
 }
 
 impl Connection {
@@ -36,58 +43,47 @@ impl Connection {
         trace!("connection {}: accepted", id);
         let (reader, writer) = stream.split();
         Connection {
-            id: id,
-            reader: reader,
-            writer: writer,
-            recv: RecvBuffer::new(),
-            send: SendBuffer::new(),
+            state: ConnectionState::new(id),
+            recv: RecvBuffer::new(reader),
+            send: SendBuffer::new(writer),
         }
     }
 
     pub fn id(&self) -> u32 {
-        self.id
+        self.state.id()
     }
-}
 
-impl Drop for Connection {
-    fn drop(&mut self) {
-        info!("connection {} terminated", self.id);
-    }
-}
-
-impl Future for Connection {
-    type Item = ();
-    type Error = std::io::Error;
-
-    fn poll(&mut self) -> Poll<(), std::io::Error> {
+    pub fn poll(&mut self, handler: &vt6::server::EarlyHandler<ConnectionState>) -> Poll<(), std::io::Error> {
         //spell it out to the borrow checker that we're *not* borrowing `self`
         //into the closure below
-        let self_id = self.id;
+        let self_id = self.state.id();
         let self_send = &mut self.send;
-        let self_writer = &mut self.writer;
+        let self_state = &mut self.state;
 
-        let recv_result = self.recv.poll(&mut self.reader, self.id, |msg| {
+        let recv_result = self.recv.poll(self_id, |msg| {
             trace!("message received on connection {}: {}", self_id, msg);
 
             //if the send buffer is getting full, try to empty it before
             //handling the message (we want to guarantee at least 1024 bytes in
             //the send buffer before trying to handle the message)
-            while self_send.unfilled_len() < 1024 {
-                try_ready!(self_send.poll(self_writer));
+            while self_send.0.unfilled_len() < 1024 {
+                try_ready!(self_send.poll());
             }
 
-            //try to handle this message
-            //TODO: pass `msg` to a handler instead of this bogus handler
-            let result = msg::MessageFormatter::new(&mut self_send.buf[self_send.fill ..],"nope", 0).finalize();
+            //try to handle this messag
+            let result = handler.handle(msg, self_state, self_send.0.unfilled_mut());
             match result {
                 Ok(bytes_written) => {
-                    self_send.fill += bytes_written;
+                    self_send.0.fill += bytes_written;
                     //TODO validate that self_send.fill < self_send.buf.len()
                 },
-                Err(msg::BufferTooSmallError(_bytes_missing)) => {
-                    //TODO give up and send (nope) instead (kind of
-                    //pointless right now because we *are* sending (nope)
-                    //already)
+                Err(_) => {
+                    //message was either invalid or the send buffer was exceeded
+                    //when trying to send a reply -> answer with (nope) instead
+                    let result = msg::MessageFormatter::new(self_send.0.unfilled_mut(),"nope", 0).finalize();
+                    if let Ok(bytes_written) = result { // TODO otherwise log error
+                        self_send.0.fill += bytes_written;
+                    }
                 },
             };
             Ok(Async::Ready(()))
@@ -96,8 +92,9 @@ impl Future for Connection {
         if let Ok(Async::NotReady) = recv_result {
             //when self.recv.poll() returned "not ready", make sure that the
             //task also knows about our interest in writing to self.writer
-            if self_send.fill > 0 {
-                return self_send.poll(self_writer);
+            if self_send.0.fill > 0 {
+                //note that this never returns Async::Ready
+                return self_send.poll();
             }
         }
         recv_result
@@ -106,15 +103,21 @@ impl Future for Connection {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-struct RecvBuffer {
+struct Buffer {
     buf: Vec<u8>,
     fill: usize,
 }
 
-impl RecvBuffer {
-    fn new() -> Self {
-        RecvBuffer { buf: vec![0; 1024], fill: 0 }
+impl Buffer {
+    fn new(size: usize) -> Self {
+        Self { buf: vec![0; size], fill: 0 }
     }
+
+    //assorted helper methods
+    fn unfilled_len(&self) -> usize { self.buf.len() - self.fill }
+    fn leading(&self, bytes: usize) -> &[u8] { &self.buf[0 .. bytes] }
+    fn filled(&self) -> &[u8] { self.leading(self.fill) }
+    fn unfilled_mut(&mut self) -> &mut [u8] { &mut self.buf[self.fill ..] }
 
     ///Discards the given number of bytes from the buffer and shifts the
     ///remaining bytes to the left by that much.
@@ -128,28 +131,37 @@ impl RecvBuffer {
         }
         self.fill = remaining;
     }
+}
 
-    fn poll<R, F>(&mut self, reader: &mut R, connection_id: u32, mut handle_message: F) -> Poll<(), std::io::Error>
-        where R: AsyncRead,
-              F: FnMut(&msg::Message) -> Poll<(), std::io::Error> {
+////////////////////////////////////////////////////////////////////////////////
+
+struct RecvBuffer<T: AsyncRead>(Buffer, ReadHalf<T>);
+
+impl<T: AsyncRead> RecvBuffer<T> {
+    fn new(writer: ReadHalf<T>) -> Self {
+        RecvBuffer(Buffer::new(2048), writer)
+    }
+
+    fn poll<F>(&mut self, connection_id: u32, mut handle_message: F) -> Poll<(), std::io::Error>
+        where F: FnMut(&msg::Message) -> Poll<(), std::io::Error> {
         //NOTE: We cannot handle `bytes_to_discard` and `incomplete` directly
-        //inside the match arms because the reference to `self.buf` needs to go
+        //inside the match arms because the reference to `self.0.buf` needs to go
         //out of scope first.
-        let (bytes_to_discard, incomplete) = match msg::Message::parse(&self.buf[0..self.fill]) {
+        let (bytes_to_discard, incomplete) = match msg::Message::parse(self.0.filled()) {
             Ok((msg, bytes_consumed)) => {
                 try_ready!(handle_message(&msg));
                 (bytes_consumed, false)
             },
-            Err(ref e) if e.kind == msg::ParseErrorKind::UnexpectedEOF && self.fill < self.buf.len() => {
+            Err(ref e) if e.kind == msg::ParseErrorKind::UnexpectedEOF && self.0.unfilled_len() > 0 => {
                 (0, true)
             },
             Err(e) => {
                 //parser error -> reset the stream parser [vt6/core1.0; sect. 2.3]
-                let bytes_to_discard = self.buf.iter().skip(1).position(|&c| c == b'{')
-                    .map(|x| x + 1).unwrap_or(self.fill);
+                let bytes_to_discard = self.0.buf.iter().skip(1).position(|&c| c == b'{')
+                    .map(|x| x + 1).unwrap_or(self.0.fill);
                 //^ The .skip(1) is necessary to ensure that bytes_to_discard > 0.
                 //The .map() compensates the effect of .skip(1) on the index.
-                let discarded = String::from_utf8_lossy(&self.buf[0..bytes_to_discard]);
+                let discarded = String::from_utf8_lossy(self.0.leading(bytes_to_discard));
                 error!("input discarded on connection {}: {:?}", connection_id, discarded);
                 error!("-> reason: {}", e);
                 (bytes_to_discard, false)
@@ -158,15 +170,15 @@ impl RecvBuffer {
 
         if incomplete {
             //it appears we have not read a full message yet
-            if self.fill < self.buf.len() {
-                let bytes_read = try_ready!(reader.poll_read(&mut self.buf[self.fill..]));;
-                self.fill += bytes_read;
+            if self.0.unfilled_len() > 0 {
+                let bytes_read = try_ready!(self.1.poll_read(self.0.unfilled_mut()));;
+                self.0.fill += bytes_read;
                 if bytes_read == 0 {
                     //EOF - if we still have something in the buffer, it's an
                     //unfinished message -> complain
-                    if self.fill > 0 {
-                        let err = msg::Message::parse(&self.buf[0..self.fill]).unwrap_err();
-                        let discarded = String::from_utf8_lossy(&self.buf[0..self.fill]);
+                    if self.0.fill > 0 {
+                        let err = msg::Message::parse(self.0.filled()).unwrap_err();
+                        let discarded = String::from_utf8_lossy(self.0.filled());
                         error!("input discarded on connection {}: {:?}", connection_id, discarded);
                         error!("-> reason: {}", err);
                     }
@@ -174,54 +186,31 @@ impl RecvBuffer {
                 }
             }
             //restart handler with the new data
-            return self.poll(reader, connection_id, handle_message);
+            return self.poll(connection_id, handle_message);
         }
 
         //we have read something (either a message or a definitive parser
         //error), so now we need to discard the bytes that were processed from
         //the recv buffer
-        self.discard(bytes_to_discard);
+        self.0.discard(bytes_to_discard);
         //attempt to read the next message immediately
-        self.poll(reader, connection_id, handle_message)
+        self.poll(connection_id, handle_message)
     }
 
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-struct SendBuffer {
-    buf: Vec<u8>,
-    fill: usize,
-}
+struct SendBuffer<T: AsyncWrite>(Buffer, WriteHalf<T>);
 
-impl SendBuffer {
-    fn new() -> Self {
-        SendBuffer { buf: vec![0; 2048], fill: 0 }
+impl<T: AsyncWrite> SendBuffer<T> {
+    fn new(writer: WriteHalf<T>) -> Self {
+        SendBuffer(Buffer::new(2048), writer)
     }
 
-    fn unfilled_len(&self) -> usize {
-        self.buf.len() - self.fill
-    }
-
-    fn poll<W: AsyncWrite>(&mut self, writer: &mut W) -> Poll<(), std::io::Error> {
-        let bytes_sent = try_ready!(writer.poll_write(&self.buf[0 .. self.fill]));
-        self.discard(bytes_sent);
+    fn poll(&mut self) -> Poll<(), std::io::Error> {
+        let bytes_sent = try_ready!(self.1.poll_write(self.0.filled()));
+        self.0.discard(bytes_sent);
         Ok(Async::NotReady) //we can always add more stuff to the send buffer
     }
-
-    ///Discards the given number of bytes from the buffer and shifts the
-    ///remaining bytes to the left by that much.
-    ///
-    ///TODO code duplication with RecvBuffer::discard()
-    fn discard(&mut self, count: usize) {
-        let remaining = self.fill - count;
-        for idx in 0..remaining {
-            self.buf[idx] = self.buf[idx + count];
-        }
-        for idx in remaining..self.buf.len() {
-            self.buf[idx] = 0;
-        }
-        self.fill = remaining;
-    }
-
 }

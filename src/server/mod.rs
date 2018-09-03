@@ -17,6 +17,7 @@
 *******************************************************************************/
 
 mod connection;
+mod connection_state;
 mod stdio;
 
 use std;
@@ -26,9 +27,11 @@ use std::sync::{Arc, Mutex};
 use futures::sync::mpsc;
 use tokio::prelude::*;
 use tokio_uds::UnixListener;
+use vt6;
 
 use model;
 use self::connection::Connection;
+use self::connection_state::ConnectionState;
 use self::stdio::Stdio;
 use window;
 
@@ -37,6 +40,7 @@ pub enum Event {
 }
 
 pub struct Server {
+    handler: Arc<Box<vt6::server::EarlyHandler<ConnectionState> + Send + Sync>>,
     socket_path: PathBuf,
     socket: UnixListener,
     stdio: Option<Stdio>,
@@ -49,12 +53,16 @@ pub struct Server {
 
 impl Server {
     pub fn new(socket_path: PathBuf, rx: mpsc::Receiver<Event>, model: Arc<Mutex<model::Document>>, window_handle: window::WindowHandle) -> std::io::Result<Self> {
+        let handler = vt6::server::RejectHandler {};
+        let handler = vt6::core::server::Handler::new(handler);
+
         //FIXME This opens the socket with SOCK_STREAM, but vt6/posix1 mandates
         //SOCK_SEQPACKET. I'm doing the prototyping with this for now because
         //neither mio-uds nor tokio-uds support SOCK_SEQPACKET.
         let listener = UnixListener::bind(&socket_path)?;
 
         Ok(Server {
+            handler: Arc::new(Box::new(handler)),
             socket_path: socket_path,
             socket: listener,
             stdio: None,
@@ -122,7 +130,7 @@ impl Future for Server {
         //recurse into client connections to handle input received on them
         let mut closed_connection_ids = std::collections::hash_set::HashSet::new();
         for c in self.connections.iter_mut() {
-            match c.poll() {
+            match c.poll(self.handler.as_ref().as_ref()) {
                 Err(e) => {
                     error!("error on connection {}: {}", c.id(), e);
                     //fatal error for this connection - close it from our side
