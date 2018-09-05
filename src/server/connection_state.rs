@@ -37,8 +37,8 @@ impl ConnectionState {
 }
 
 impl vt6::server::Connection for ConnectionState {
-    fn receive_buffer_size(&self) -> Option<&usize> { Some(&1024) }
-    fn send_buffer_size(&self) -> Option<&usize> { Some(&1024) }
+    fn max_server_message_length(&self) -> &usize { &1024 }
+    fn max_client_message_length(&self) -> &usize { &1024 }
 
     fn enable_module(&mut self, name: &str, version: vt6::core::ModuleVersion) {
         self.tracker.enable_module(name, version)

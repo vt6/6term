@@ -73,11 +73,11 @@ impl Connection {
             //try to handle this messag
             let result = handler.handle(msg, self_state, self_send.0.unfilled_mut());
             match result {
-                Ok(bytes_written) => {
+                Some(bytes_written) => {
                     self_send.0.fill += bytes_written;
                     //TODO validate that self_send.fill < self_send.buf.len()
                 },
-                Err(_) => {
+                None => {
                     //message was either invalid or the send buffer was exceeded
                     //when trying to send a reply -> answer with (nope) instead
                     let result = msg::MessageFormatter::new(self_send.0.unfilled_mut(),"nope", 0).finalize();
