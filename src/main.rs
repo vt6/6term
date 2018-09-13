@@ -44,6 +44,9 @@ use futures::sync::mpsc;
 fn main() {
     simple_logger::init().unwrap();
 
+    let runtime_dir = find_runtime_dir().unwrap_or_else(|_| std::process::exit(1));
+    let socket_path = runtime_dir.join(std::process::id().to_string());
+
     //setup the model shared by all threads
     let model = model::Document::new();
     {
@@ -56,7 +59,6 @@ fn main() {
     let (event_tx, event_rx) = mpsc::channel(10);
     let mut win = window::Window::new();
 
-    let socket_path = std::path::PathBuf::from("./vt6term");
     let server = match server::Server::new(socket_path.clone(), event_rx, model.clone(), win.handle()) {
         Ok(s) => s,
         Err(e) => {
@@ -88,6 +90,30 @@ fn main() {
     win.main(event_tx, model);
     join_handle1.join().unwrap();
     join_handle2.join().unwrap();
+}
+
+fn find_runtime_dir() -> Result<std::path::PathBuf, ()> {
+    //we need XDG_RUNTIME_DIR as the base for our socket path
+    let mut runtime_dir = match std::env::var_os("XDG_RUNTIME_DIR") {
+        Some(s) => std::path::PathBuf::from(s),
+        None => {
+            error!("XDG_RUNTIME_DIR not set");
+            std::process::exit(1);
+        },
+    };
+    if !runtime_dir.is_dir() {
+        error!("XDG_RUNTIME_DIR ({}) is not a directory or not accessible", runtime_dir.to_string_lossy());
+        return Err(());
+    }
+
+    //we put our sockets in "$XDG_RUNTIME_DIR/vt6"
+    runtime_dir.push("vt6");
+    if let Err(e) = std::fs::create_dir(&runtime_dir) {
+        error!("mkdir {}: {}", runtime_dir.to_string_lossy(), e);
+        return Err(());
+    }
+
+    Ok(runtime_dir)
 }
 
 use std::ffi::CString;
