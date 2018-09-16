@@ -22,7 +22,7 @@ use tokio::prelude::*;
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio_uds::UnixStream;
 use vt6;
-use vt6::core::msg;
+use vt6::common::core::msg;
 
 use server::connection_state::*;
 

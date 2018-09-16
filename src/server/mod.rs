@@ -54,7 +54,7 @@ pub struct Server {
 impl Server {
     pub fn new(socket_path: PathBuf, rx: mpsc::Receiver<Event>, model: Arc<Mutex<model::Document>>, window_handle: window::WindowHandle) -> std::io::Result<Self> {
         let handler = vt6::server::RejectHandler {};
-        let handler = vt6::core::server::Handler::new(handler);
+        let handler = vt6::server::core::Handler::new(handler);
 
         //FIXME This opens the socket with SOCK_STREAM, but vt6/posix1 mandates
         //SOCK_SEQPACKET. I'm doing the prototyping with this for now because

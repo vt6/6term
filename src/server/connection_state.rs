@@ -20,7 +20,7 @@ use vt6;
 
 pub struct ConnectionState {
     id: u32,
-    tracker: vt6::core::server::Tracker,
+    tracker: vt6::server::core::Tracker,
 }
 
 impl ConnectionState {
@@ -37,13 +37,13 @@ impl ConnectionState {
 }
 
 impl vt6::server::Connection for ConnectionState {
-    fn max_server_message_length(&self) -> &usize { &1024 }
-    fn max_client_message_length(&self) -> &usize { &1024 }
+    fn max_server_message_length(&self) -> usize { 1024 }
+    fn max_client_message_length(&self) -> usize { 1024 }
 
-    fn enable_module(&mut self, name: &str, version: vt6::core::ModuleVersion) {
+    fn enable_module(&mut self, name: &str, version: vt6::common::core::ModuleVersion) {
         self.tracker.enable_module(name, version)
     }
-    fn is_module_enabled(&self, name: &str) -> Option<vt6::core::ModuleVersion> {
+    fn is_module_enabled(&self, name: &str) -> Option<vt6::common::core::ModuleVersion> {
         self.tracker.is_module_enabled(name)
     }
 }
