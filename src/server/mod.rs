@@ -19,6 +19,7 @@
 mod connection;
 mod connection_state;
 mod stdio;
+mod term_handler;
 
 use std;
 use std::path::PathBuf;
