@@ -1,4 +1,24 @@
 [[package]]
+name = "6term"
+version = "0.1.0"
+dependencies = [
+ "cairo-rs 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.1.21 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gdk 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "glib 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gtk 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nix 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pango 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pangocairo 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "simple_logger 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-io 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-uds 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "vt6 0.0.1",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -655,26 +675,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "vt6"
 version = "0.0.1"
-
-[[package]]
-name = "vt6term"
-version = "0.1.0"
-dependencies = [
- "cairo-rs 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures 0.1.21 (registry+https://github.com/rust-lang/crates.io-index)",
- "gdk 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "glib 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "gtk 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "log 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "nix 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "pango 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "pangocairo 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "simple_logger 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tokio 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "tokio-io 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "tokio-uds 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "vt6 0.0.1",
-]
 
 [[package]]
 name = "winapi"

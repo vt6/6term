@@ -1,5 +1,5 @@
 [package]
-name = "vt6term"
+name = "6term"
 version = "0.1.0"
 authors = ["Stefan Majewsky <majewsky@gmx.net>"]
 [dependencies]
