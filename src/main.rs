@@ -108,7 +108,7 @@ fn find_runtime_dir() -> Result<std::path::PathBuf, ()> {
 
     //we put our sockets in "$XDG_RUNTIME_DIR/vt6"
     runtime_dir.push("vt6");
-    if let Err(e) = std::fs::create_dir(&runtime_dir) {
+    if let Err(e) = std::fs::create_dir_all(&runtime_dir) {
         error!("mkdir {}: {}", runtime_dir.to_string_lossy(), e);
         return Err(());
     }
