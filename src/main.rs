@@ -17,7 +17,6 @@
 *******************************************************************************/
 
 extern crate cairo;
-#[macro_use]
 extern crate futures;
 extern crate gdk;
 extern crate glib;
@@ -29,9 +28,8 @@ extern crate pango;
 extern crate pangocairo;
 extern crate simple_logger;
 extern crate tokio;
-extern crate tokio_io;
-extern crate tokio_uds;
 extern crate vt6;
+extern crate vt6tokio;
 
 mod model;
 mod server;
@@ -59,7 +57,7 @@ fn main() {
     let (event_tx, event_rx) = mpsc::channel(10);
     let mut win = window::Window::new();
 
-    let server = match server::Server::new(socket_path.clone(), event_rx, model.clone(), win.handle()) {
+    let server = match server::make_server_future(socket_path.clone(), event_rx, model.clone(), win.handle()) {
         Ok(s) => s,
         Err(e) => {
             error!("failed to initialize VT6 server socket: {}", e);

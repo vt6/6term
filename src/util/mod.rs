@@ -33,6 +33,7 @@ impl<T> AnchoredArc<T> {
 }
 
 unsafe impl<T> Send for AnchoredArc<T> {}
+unsafe impl<T> Sync for AnchoredArc<T> {}
 
 impl<T> AsRef<T> for AnchoredArc<T> {
     fn as_ref(&self) -> &T {

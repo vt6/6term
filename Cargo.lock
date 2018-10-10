@@ -13,9 +13,8 @@ dependencies = [
  "pangocairo 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "simple_logger 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "tokio-io 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "tokio-uds 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "vt6 0.0.1",
+ "vt6tokio 0.0.1",
 ]
 
 [[package]]
@@ -675,6 +674,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "vt6"
 version = "0.0.1"
+
+[[package]]
+name = "vt6tokio"
+version = "0.0.1"
+dependencies = [
+ "futures 0.1.21 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio-uds 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "vt6 0.0.1",
+]
 
 [[package]]
 name = "winapi"

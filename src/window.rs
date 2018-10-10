@@ -25,9 +25,9 @@ use gdk;
 use glib;
 use gtk::{self, DrawingArea, Window as GtkWindow, WindowType};
 use gtk::prelude::*;
+use vt6tokio::server::core::IncomingEvent;
 
 use model;
-use server;
 use util::AnchoredArc;
 use view;
 
@@ -56,7 +56,7 @@ impl Window {
     }
 
     ///Returns when the GUI thread is done, meaning that all other threads shall be shut down.
-    pub fn main(&mut self, tx: mpsc::Sender<server::Event>, model: Arc<Mutex<model::Document>>) {
+    pub fn main(&mut self, tx: mpsc::Sender<IncomingEvent>, model: Arc<Mutex<model::Document>>) {
 
         self.window.connect_delete_event(|_,_| {
             gtk::main_quit();
@@ -109,7 +109,7 @@ impl Window {
                     model::CursorActionResult::LineCompleted(s) => {
                         widget.queue_draw();
                         //TODO check return value from try_send
-                        tx.borrow_mut().try_send(server::Event::UserInput(s)).unwrap();
+                        tx.borrow_mut().try_send(IncomingEvent::UserInput(s)).unwrap();
                     },
                 }
             }
@@ -123,6 +123,7 @@ impl Window {
     }
 }
 
+#[derive(Clone)]
 pub struct WindowHandle(AnchoredArc<DrawingArea>);
 
 impl WindowHandle {

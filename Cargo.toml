@@ -3,13 +3,12 @@ name = "6term"
 version = "0.1.0"
 authors = ["Stefan Majewsky <majewsky@gmx.net>"]
 [dependencies]
-vt6 = { path = "../vt6.rs" }
+vt6 = { path = "../vt6.rs/vt6" }
+vt6tokio = { path = "../vt6.rs/vt6tokio" }
 
-# event loop
-futures = "^0.1.18"
-tokio = "^0.1"
-tokio-io = "*"
-tokio-uds = "*"
+# event loop (NOTE: vt6tokio has more specific dependency requirements)
+futures = "*"
+tokio = "*"
 
 # logging
 log = { version = "^0.4", features = [ "max_level_trace", "release_max_level_info" ] }
