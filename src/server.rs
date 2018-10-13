@@ -102,12 +102,11 @@ impl vt6tokio::server::core::Connection for Connection {
     }
 
     fn handle_standard_output(&mut self, bytes_received: &[u8]) {
-        //TODO remove or interpret escape sequences
-        let str_read = String::from_utf8_lossy(bytes_received);
         let mut document = self.model.lock().unwrap();
         //append the received output to bottom-most output section
         if let Some(section) = document.sections.last_mut() {
-            section.append_output(&str_read);
+            //TODO respect term.output-protected property
+            section.append_output(bytes_received, false);
         }
         //TODO check return value from try_send
         self.event_tx.try_send(OutgoingEvent::RedrawWindow).unwrap();

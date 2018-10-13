@@ -30,6 +30,7 @@ extern crate simple_logger;
 extern crate tokio;
 extern crate vt6;
 extern crate vt6tokio;
+extern crate vte;
 
 mod model;
 mod server;

@@ -24,3 +24,4 @@ pangocairo = "*"
 
 # misc
 nix = "^0.11"
+vte = "^0.3"

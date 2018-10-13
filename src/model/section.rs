@@ -16,6 +16,8 @@
 *
 *******************************************************************************/
 
+use vte;
+
 pub enum CursorAction {
     Insert(String),
     //TODO replace "Char" by "GraphemeCluster" or sth like that
@@ -90,8 +92,16 @@ impl Section {
     }
 
     ///Appends additional output to this section.
-    pub fn append_output(&mut self, text: &str) {
-        self.text.insert_str(self.output_cursor, text);
+    pub fn append_output(&mut self, input: &[u8], output_protected: bool) {
+        let mut parser = vte::Parser::new();
+        let mut performer = ANSIPerformer::new(output_protected);
+
+        for byte in input {
+            parser.advance(&mut performer, *byte);
+        }
+
+        let text = performer.string;
+        self.text.insert_str(self.output_cursor, &text);
         let len = text.len();
         self.input_cursor += len;
         self.output_cursor += len;
@@ -148,5 +158,97 @@ impl Section {
                 Changed
             },
         }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+struct ANSIPerformer {
+    //externally accessible state
+    string: String,
+    //configuration (set only at construction time)
+    protected: bool,
+    //internal state (manipulated by the vte::Perform trait method implementations)
+    ignore_next_nl: bool,
+}
+
+impl ANSIPerformer {
+    fn new(output_protected: bool) -> Self {
+        Self {
+            string: String::new(),
+            protected: output_protected,
+            ignore_next_nl: false,
+        }
+    }
+}
+
+impl vte::Perform for ANSIPerformer {
+    fn print(&mut self, ch: char) {
+        self.string.push(ch);
+
+        //received a character that is not NL
+        self.ignore_next_nl = false;
+    }
+
+    fn execute(&mut self, byte: u8) {
+        match byte {
+            //NOTE: CR-NL, CR -> NL conversion according to [vt6/term1.0, sect. 1.2]
+            b'\r' => {
+                //CR -> convert to NL, set flag to ignore next char if NL
+                self.string.push('\n');
+                self.ignore_next_nl = true;
+            },
+            b'\n' => {
+                //skip NL if already printed during handling of immediately preceding CR
+                if self.ignore_next_nl {
+                    self.ignore_next_nl = false;
+                } else {
+                    self.string.push('\n');
+                }
+            },
+            _ => info!("STUB: ANSIPerformer::execute({:?})", byte),
+        };
+    }
+
+    fn hook(&mut self, params: &[i64], intermediates: &[u8], ignore: bool) {
+        if self.protected {
+            return;
+        }
+        info!("stub: ANSIPerformer::hook({:?}, {:?}, {:?})", params, intermediates, ignore);
+    }
+
+    fn put(&mut self, byte: u8) {
+        if self.protected {
+            return;
+        }
+        info!("STUB: ANSIPerformer::put({:?})", byte);
+    }
+
+    fn unhook(&mut self) {
+        if self.protected {
+            return;
+        }
+        info!("STUB: ANSIPerformer::unhook()");
+    }
+
+    fn osc_dispatch(&mut self, params: &[&[u8]]) {
+        if self.protected {
+            return;
+        }
+        info!("STUB: ANSIPerformer::osc_dispatch({:?})", params);
+    }
+
+    fn csi_dispatch(&mut self, params: &[i64], intermediates: &[u8], ignore: bool, byte: char) {
+        if self.protected {
+            return;
+        }
+        info!("stub: ANSIPerformer::csi_dispatch({:?}, {:?}, {:?}, {:?})", params, intermediates, ignore, byte);
+    }
+
+    fn esc_dispatch(&mut self, params: &[i64], intermediates: &[u8], ignore: bool, byte: u8) {
+        if self.protected {
+            return;
+        }
+        info!("stub: ANSIPerformer::esc_dispatch({:?}, {:?}, {:?}, {:?})", params, intermediates, ignore, byte);
     }
 }
