@@ -83,7 +83,7 @@ impl vt6tokio::server::core::Connection for Connection {
     type ModelRef = Arc<Mutex<model::Document>>;
     type OutgoingEvent = OutgoingEvent;
 
-    fn create(
+    fn new(
         id: u32, model: Arc<Mutex<model::Document>>, event_tx: mpsc::Sender<OutgoingEvent>
     ) -> Connection
     {
